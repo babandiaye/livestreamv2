@@ -1,0 +1,63 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  ADMIN
+  MODERATOR
+  VIEWER
+}
+
+enum SessionStatus {
+  SCHEDULED
+  LIVE
+  ENDED
+}
+
+model User {
+  id         String    @id @default(cuid())
+  keycloakId String    @unique
+  email      String    @unique
+  name       String
+  role       Role      @default(VIEWER)
+  sessions   Session[]
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+}
+
+model Session {
+  id                   String        @id @default(cuid())
+  roomName             String        @unique
+  title                String
+  description          String?
+  creatorId            String
+  creator              User          @relation(fields: [creatorId], references: [id])
+  status               SessionStatus @default(SCHEDULED)
+  startedAt            DateTime?
+  endedAt              DateTime?
+  chatEnabled          Boolean       @default(true)
+  participationEnabled Boolean       @default(false)
+  moodleCourseId       String?
+  moodleMeetingId      String?
+  recordings           Recording[]
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+}
+
+model Recording {
+  id          String   @id @default(cuid())
+  sessionId   String
+  session     Session  @relation(fields: [sessionId], references: [id])
+  s3Key       String
+  s3Bucket    String
+  filename    String
+  duration    Int?
+  size        BigInt?
+  egressId    String?
+  publishable Boolean  @default(true)
+  createdAt   DateTime @default(now())
+}
