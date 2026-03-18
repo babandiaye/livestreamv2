@@ -25,7 +25,6 @@ Plateforme de webinaires et de visioconférences pour l'Université Numérique C
 ---
 
 ## Installation
-
 ```bash
 # 1. Cloner le dépôt
 git clone git@github.com:babandiaye/livestreamv2.git
@@ -58,7 +57,6 @@ pnpm start
 ---
 
 ## Variables d'environnement
-
 ```env
 # Application
 NEXT_PUBLIC_SITE_URL=https://votre-domaine.sn
@@ -116,7 +114,6 @@ Dans votre realm, créer un client OIDC puis créer ces deux rôles dans l'ongle
 **Méthode 2 — Directement en base (urgence)**
 
 Après une première connexion SSO de l'utilisateur :
-
 ```sql
 psql -U postgres -d livestreamv2
 UPDATE "User" SET role = 'ADMIN' WHERE email = 'votre@email.sn';
@@ -129,7 +126,6 @@ UPDATE "User" SET role = 'ADMIN' WHERE email = 'votre@email.sn';
 | Action | Admin | Modérateur | Spectateur |
 |---|:---:|:---:|:---:|
 | Gérer les salles | Toutes | Ses salles | — |
-| Gérer les utilisateurs | ✓ | ✓ | — |
 | Attribuer des rôles | ✓ | — | — |
 | Enrôler des utilisateurs | ✓ | Ses salles | — |
 | Import CSV | ✓ | Ses salles | — |
@@ -138,12 +134,41 @@ UPDATE "User" SET role = 'ADMIN' WHERE email = 'votre@email.sn';
 | Voir enregistrements | Toutes salles | Ses salles | Salles assignées |
 | Rejoindre une session | ✓ | ✓ | Salles assignées |
 
+> **Doublon de nom** : si deux spectateurs ont le même nom, le second est invité à ajouter un suffixe
+> (ex: `2`, `Bis`) pour se différencier dans la salle.
+
+---
+
+## Navigation par rôle
+
+| Rôle | Page d'accueil | Interface |
+|---|---|---|
+| ADMIN | `/` → `/admin` accessible via bouton | Dashboard + panel admin complet |
+| MODERATOR | `/` → `/admin` accessible via bouton | Dashboard + panel admin (ses salles) |
+| VIEWER | `/` → redirigé vers `/student` | Vue salles assignées + enregistrements |
+
+---
+
+## Enrôlement des spectateurs
+
+L'admin ou le modérateur peut enrôler des spectateurs dans une salle depuis `/admin` :
+
+**Individuel** — recherche par nom ou email, ajout en un clic.
+
+**Import CSV** — glisser-déposer un fichier CSV avec les colonnes suivantes :
+- `email` (1 colonne)
+- `email,nom` (2 colonnes)
+- `email,prenom,nom` (export Moodle — 3 colonnes)
+
+Séparateur virgule `,` ou point-virgule `;` — ligne d'en-tête auto-détectée.
+Un rapport d'import indique les emails enrôlés, déjà enrôlés, et non trouvés
+(utilisateurs qui ne se sont pas encore connectés via Keycloak).
+
 ---
 
 ## Service systemd (production)
 
 Créer `/etc/systemd/system/livestream.service` :
-
 ```ini
 [Unit]
 Description=LiveStreamV2
@@ -160,7 +185,6 @@ EnvironmentFile=/var/www/html/livestreamv2/.env
 [Install]
 WantedBy=multi-user.target
 ```
-
 ```bash
 systemctl daemon-reload
 systemctl enable livestream
@@ -173,7 +197,6 @@ journalctl -u livestream -f
 ---
 
 ## Commandes utiles
-
 ```bash
 # Développement
 pnpm dev
@@ -193,24 +216,58 @@ journalctl -u livestream -f
 
 ---
 
-## Structure du projet
+## Rollback
 
+Voir l'historique des commits :
+```bash
+git log --oneline
+```
+
+Revenir à un commit précédent (sans perdre l'historique) :
+```bash
+git revert <commit-hash>
+git push origin main
+npx prisma generate
+pnpm build && systemctl restart livestream
+```
+
+Rollback forcé (urgence) :
+```bash
+git reset --hard <commit-hash>
+git push origin main --force
+npx prisma generate
+pnpm build && systemctl restart livestream
+```
+
+> ⚠️ `--force` réécrit l'historique distant. Préférer `git revert` en production.
+
+---
+
+## Structure du projet
 ```
 src/
 ├── app/
-│   ├── api/          # Routes API REST
-│   ├── admin/        # Interface d'administration
-│   ├── watch/        # Page de visionnage LiveKit
-│   ├── recordings/   # Liste des enregistrements
+│   ├── api/
+│   │   ├── admin/          # Routes admin (rooms, users, recordings, enrollment)
+│   │   ├── recordings/     # Liste S3 (public) + /me (par rôle, Prisma)
+│   │   ├── rooms/          # CRUD salles
+│   │   ├── join_stream/    # Rejoindre une session
+│   │   ├── create_stream/  # Démarrer une session (hôte)
+│   │   └── webhook/        # Webhook LiveKit (egress)
+│   ├── admin/              # Interface d'administration
+│   ├── student/            # Vue spectateur
+│   ├── host/               # Interface hôte LiveKit
+│   ├── watch/[roomName]/   # Page visionnage LiveKit
+│   ├── recordings/         # Liste publique des enregistrements
 │   └── dashboard.client.tsx
-├── auth.ts           # NextAuth + sync Keycloak → Prisma
-├── components/       # Composants réutilisables
+├── auth.ts                 # NextAuth + sync Keycloak → Prisma
+├── components/             # Composants réutilisables
 └── lib/
-    ├── prisma.ts     # Singleton Prisma
-    └── controller.ts
+    ├── prisma.ts           # Singleton Prisma
+    └── controller.ts       # Logique LiveKit
 prisma/
-├── migrations/       # Migrations versionnées
-└── schema.prisma     # Schéma base de données
+├── migrations/             # Migrations versionnées
+└── schema.prisma           # Schéma base de données
 ```
 
 ---
