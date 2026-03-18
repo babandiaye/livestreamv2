@@ -38,15 +38,22 @@ pnpm install
 cp env.example .env
 nano .env
 
-# 4. Appliquer les migrations
+# 4. Créer la base de données PostgreSQL
+createdb livestreamv2
+
+# 5. Générer le client Prisma et appliquer les migrations
+npx prisma generate
 npx prisma migrate deploy
 
-# 5. Builder
+# 6. Builder
 pnpm build
 
-# 6. Démarrer (port 4000)
+# 7. Démarrer (port 4000)
 pnpm start
 ```
+
+> **Note** : Si le build échoue avec `Module '"@prisma/client"' has no exported member 'Role'`,
+> relancer `npx prisma generate` puis `pnpm build`.
 
 ---
 
@@ -111,6 +118,7 @@ Dans votre realm, créer un client OIDC puis créer ces deux rôles dans l'ongle
 Après une première connexion SSO de l'utilisateur :
 
 ```sql
+psql -U postgres -d livestreamv2
 UPDATE "User" SET role = 'ADMIN' WHERE email = 'votre@email.sn';
 ```
 
@@ -144,10 +152,10 @@ After=network.target
 [Service]
 Type=simple
 User=www-data
-WorkingDirectory=/var/www/html/livestream_v2
+WorkingDirectory=/var/www/html/livestreamv2
 ExecStart=/usr/bin/node node_modules/.bin/next start -p 4000
 Restart=always
-EnvironmentFile=/var/www/html/livestream_v2/.env
+EnvironmentFile=/var/www/html/livestreamv2/.env
 
 [Install]
 WantedBy=multi-user.target
@@ -171,9 +179,9 @@ journalctl -u livestream -f
 pnpm dev
 
 # Migrations
-npx prisma migrate dev --name nom_du_changement
-npx prisma migrate deploy        # production
-npx prisma generate              # régénérer le client
+npx prisma generate                              # régénérer le client après modif schéma
+npx prisma migrate dev --name nom_du_changement  # créer une migration (dev)
+npx prisma migrate deploy                        # appliquer les migrations (production)
 
 # Interface Prisma
 npx prisma studio
@@ -201,6 +209,7 @@ src/
     ├── prisma.ts     # Singleton Prisma
     └── controller.ts
 prisma/
+├── migrations/       # Migrations versionnées
 └── schema.prisma     # Schéma base de données
 ```
 
