@@ -24,7 +24,7 @@ export async function POST(req: Request) {
       fileType: EncodedFileType.MP4,
       filepath: `webinaire/${session.room_name}-{time}`,
       output: { case: "s3", value: s3 },
-    } as any); // eslint-disable-line @typescript-eslint/no-explicit-any
+    } as any);
 
     const info = await egressClient.startRoomCompositeEgress(
       session.room_name,
