@@ -103,7 +103,7 @@ export default function DashboardClient({ user }: { user: User }) {
         <div className="gl-header-right">
           <span className="gl-user-badge">{user.role}</span>
           <span className="gl-user-name">{user.name ?? user.email}</span>
-          {user.role === "ADMIN" && (
+          {(user.role === "ADMIN" || user.role === "MODERATOR") && (
             <a href="/admin" className="gl-btn-admin">⚙ Admin</a>
           )}
           <button className="gl-btn-outline" onClick={() => signOut({ callbackUrl: "/" })}>
@@ -118,9 +118,11 @@ export default function DashboardClient({ user }: { user: User }) {
             <h1 className="gl-title">Mes salles</h1>
             <p className="gl-subtitle">{rooms.length} salle{rooms.length !== 1 ? "s" : ""}</p>
           </div>
-          <button className="gl-btn-primary" onClick={() => setShowCreate(true)}>
-            + Créer une salle
-          </button>
+          {user.role !== "VIEWER" && (
+            <button className="gl-btn-primary" onClick={() => setShowCreate(true)}>
+              + Créer une salle
+            </button>
+          )}
         </div>
 
         {loading ? (
@@ -129,9 +131,11 @@ export default function DashboardClient({ user }: { user: User }) {
           <div className="gl-empty">
             <div className="gl-empty-icon">🏠</div>
             <p>Vous n&apos;avez pas encore de salle</p>
-            <button className="gl-btn-primary" onClick={() => setShowCreate(true)}>
-              Créer votre première salle
-            </button>
+            {user.role !== "VIEWER" && (
+              <button className="gl-btn-primary" onClick={() => setShowCreate(true)}>
+                Créer votre première salle
+              </button>
+            )}
           </div>
         ) : (
           <div className="gl-rooms">
@@ -222,7 +226,7 @@ export default function DashboardClient({ user }: { user: User }) {
                                   target="_blank"
                                   rel="noopener noreferrer"
                                 >
-                                  ⬇ Télécharger
+                                  Télécharger
                                 </a>
                               </div>
                             </div>
@@ -282,13 +286,15 @@ export default function DashboardClient({ user }: { user: User }) {
                            room.status === "ENDED" ? "Terminée" : "Programmée"}
                         </span>
                       </div>
-                      <button
-                        className="gl-btn-delete"
-                        onClick={() => deleteRoom(room.id)}
-                        disabled={deleting === room.id}
-                      >
-                        {deleting === room.id ? "Suppression..." : "Supprimer la salle"}
-                      </button>
+                      {user.role !== "VIEWER" && (
+                        <button
+                          className="gl-btn-delete"
+                          onClick={() => deleteRoom(room.id)}
+                          disabled={deleting === room.id}
+                        >
+                          {deleting === room.id ? "Suppression..." : "Supprimer la salle"}
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>

@@ -76,6 +76,14 @@ function JoinForm({ roomName, onJoin }: {
 export default function WatchPage({ roomName, serverUrl }: { roomName: string; serverUrl: string }) {
   const [session, setSession] = useState<{ authToken: string; roomToken: string } | null>(null);
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const token = params.get("token")
+    if (token && !session) {
+      setSession({ authToken: token, roomToken: token })
+    }
+  }, [])
+
   if (!session) {
     return <JoinForm roomName={roomName} onJoin={(authToken, roomToken) => setSession({ authToken, roomToken })} />;
   }
@@ -170,7 +178,6 @@ function ViewerRoom() {
 
   return (
     <div className="v-root">
-      {/* Topbar */}
       <div className="v-topbar">
         <div className="v-topbar-left">
           <img src="/logo-unchk.png" alt="UN-CHK" className="v-topbar-logo" onError={e => (e.currentTarget.style.display="none")} />
@@ -178,9 +185,7 @@ function ViewerRoom() {
           <div className="v-live-pill"><span className="v-live-dot"/>EN DIRECT</div>
         </div>
         <div className="v-topbar-right">
-          <div className="v-conn-badge">
-            <span className="v-conn-dot"/>Connecté
-          </div>
+          <div className="v-conn-badge"><span className="v-conn-dot"/>Connecté</div>
           <div className="v-count-badge">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
             {participants.length}
@@ -193,9 +198,7 @@ function ViewerRoom() {
         </div>
       </div>
 
-      {/* Body */}
       <div className="v-body">
-        {/* Stage */}
         <div className="v-stage">
           <div className="v-main-video">
             {screenTrack ? (
@@ -211,13 +214,9 @@ function ViewerRoom() {
                 <p className="v-no-video-sub">L'animateur n'a pas encore démarré</p>
               </div>
             )}
-
-            {/* Nom participant bas-gauche */}
             {mainCamTrack && !screenTrack && (
               <div className="v-name-tag">{mainCamTrack.participant.identity}</div>
             )}
-
-            {/* PIP */}
             {screenTrack && (
               <div className="v-pip-container">
                 {mainCamTrack && (
@@ -272,7 +271,6 @@ function ViewerRoom() {
           )}
         </div>
 
-        {/* Sidebar Chat */}
         <div className="v-panel" style={{ display: panel === "chat" ? "flex" : "none" }}>
           <div className="v-panel-hdr">
             <div className="v-panel-hdr-left">
@@ -287,7 +285,6 @@ function ViewerRoom() {
         </div>
       </div>
 
-      {/* Controls — style JokkoMeet : icône ronde + label dessous */}
       <div className="v-controls">
         <div className="v-controls-inner">
           <div className="v-ctrl-left">
@@ -301,7 +298,6 @@ function ViewerRoom() {
           </div>
 
           <div className="v-ctrl-center">
-            {/* Micro — visible seulement sur scène */}
             {onStage && (
               <button className={`v-btn${!micOn ? " off" : ""}`} onClick={() => localParticipant.setMicrophoneEnabled(!micOn, audioOptions)}>
                 <div className="v-btn-icon">
@@ -315,7 +311,6 @@ function ViewerRoom() {
               </button>
             )}
 
-            {/* Caméra — visible seulement sur scène */}
             {onStage && (
               <button className={`v-btn${!camOn ? " off" : ""}`} onClick={() => localParticipant.setCameraEnabled(!camOn)}>
                 <div className="v-btn-icon">
@@ -329,7 +324,6 @@ function ViewerRoom() {
               </button>
             )}
 
-            {/* Partage écran — visible seulement sur scène */}
             {onStage && (
               <button className={`v-btn${shareOn ? " active" : ""}`} onClick={async () => { await localParticipant.setScreenShareEnabled(!shareOn); setShareOn(!shareOn); }}>
                 <div className="v-btn-icon">
@@ -339,7 +333,6 @@ function ViewerRoom() {
               </button>
             )}
 
-            {/* Réactions */}
             <button className={`v-btn${showEmojiPicker ? " active" : ""}`} onClick={() => setShowEmojiPicker(!showEmojiPicker)}>
               <div className="v-btn-icon">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
@@ -347,7 +340,6 @@ function ViewerRoom() {
               <span className="v-btn-label">Réagir</span>
             </button>
 
-            {/* Lever la main */}
             {!onStage && (
               <button className={`v-btn${handRaised ? " raised" : ""}`} onClick={raiseHand} disabled={handRaised || raisingHand}>
                 <div className="v-btn-icon">
@@ -357,7 +349,6 @@ function ViewerRoom() {
               </button>
             )}
 
-            {/* Quitter scène si sur scène */}
             {onStage && (
               <button className="v-btn stage-active" onClick={leaveStage}>
                 <div className="v-btn-icon">
@@ -367,7 +358,6 @@ function ViewerRoom() {
               </button>
             )}
 
-            {/* Chat */}
             <button className={`v-btn${panel === "chat" ? " active" : ""}`} onClick={() => setPanel(panel === "chat" ? null : "chat")}>
               <div className="v-btn-icon">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
@@ -375,7 +365,6 @@ function ViewerRoom() {
               <span className="v-btn-label">Chat</span>
             </button>
 
-            {/* Quitter — rouge centré comme JokkoMeet */}
             <a href="/" className="v-btn quit">
               <div className="v-btn-icon">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M6.62 10.79a15.05 15.05 0 0 0 6.59 6.59l2.2-2.2a1 1 0 0 1 1.01-.24c1.12.37 2.33.57 3.58.57a1 1 0 0 1 1 1V20a1 1 0 0 1-1 1C10.61 21 3 13.39 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.25.2 2.46.57 3.58a1 1 0 0 1-.25 1.01l-2.2 2.2z" transform="rotate(135 12 12)"/></svg>
@@ -391,8 +380,6 @@ function ViewerRoom() {
       <style>{`
         *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
         .v-root{display:flex;flex-direction:column;height:100dvh;background:#0d1117;color:#e6edf3;font-family:'Segoe UI',system-ui,sans-serif;}
-
-        /* Topbar */
         .v-topbar{display:flex;align-items:center;justify-content:space-between;padding:0 20px;background:#161b22;border-bottom:1px solid #21262d;flex-shrink:0;height:52px;}
         .v-topbar-left{display:flex;align-items:center;gap:12px;}
         .v-topbar-right{display:flex;align-items:center;gap:10px;}
@@ -408,8 +395,6 @@ function ViewerRoom() {
         .v-identity-avatar{width:24px;height:24px;border-radius:50%;background:#388bfd;display:flex;align-items:center;justify-content:center;font-size:0.75rem;font-weight:700;color:white;flex-shrink:0;}
         .v-identity-name{font-size:0.82rem;font-weight:500;color:#e6edf3;}
         .v-identity-role{font-size:0.7rem;color:#8b949e;background:#161b22;padding:1px 6px;border-radius:4px;}
-
-        /* Body */
         .v-body{display:flex;flex:1;overflow:hidden;}
         .v-stage{flex:1;display:flex;flex-direction:column;overflow:hidden;position:relative;background:#010409;}
         .v-main-video{flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative;}
@@ -429,28 +414,21 @@ function ViewerRoom() {
         .v-leave-stage{background:rgba(248,81,73,.15);border:1px solid rgba(248,81,73,.4);color:#f85149;padding:3px 10px;border-radius:6px;font-size:0.75rem;cursor:pointer;font-family:inherit;transition:background .2s;}
         .v-leave-stage:hover{background:rgba(248,81,73,.25);}
         .v-start-audio{position:absolute;inset:0;background:rgba(1,4,9,.8);color:#e6edf3;border:none;font-size:1rem;cursor:pointer;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px);}
-
-        /* Sidebar */
         .v-panel{width:300px;flex-shrink:0;background:#161b22;border-left:1px solid #21262d;flex-direction:column;}
         .v-panel-hdr{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid #21262d;font-weight:600;font-size:0.88rem;color:#e6edf3;flex-shrink:0;}
         .v-panel-hdr-left{display:flex;align-items:center;gap:8px;color:#8b949e;}
         .v-panel-hdr-left span{color:#e6edf3;}
         .v-panel-close{width:28px;height:28px;background:none;border:none;color:#8b949e;cursor:pointer;border-radius:6px;display:flex;align-items:center;justify-content:center;transition:background .15s;}
         .v-panel-close:hover{background:#21262d;color:#e6edf3;}
-
-        /* Controls */
         .v-controls{background:#161b22;border-top:1px solid #21262d;flex-shrink:0;padding:10px 24px;}
         .v-controls-inner{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;max-width:100%;}
         .v-ctrl-left{display:flex;align-items:center;}
-        .v-ctrl-right{}
         .v-room-info{display:flex;align-items:center;gap:6px;font-size:0.78rem;color:#8b949e;}
         .v-ctrl-logo{height:20px;object-fit:contain;}
         .v-ctrl-room{color:#e6edf3;font-weight:500;}
         .v-ctrl-sep{color:#484f58;}
         .v-ctrl-count{color:#8b949e;}
         .v-ctrl-center{display:flex;align-items:flex-start;gap:4px;justify-content:center;}
-
-        /* Boutons style JokkoMeet — icône ronde + label */
         .v-btn{display:flex;flex-direction:column;align-items:center;gap:4px;padding:6px 10px;background:none;border:none;color:#8b949e;cursor:pointer;font-family:inherit;border-radius:8px;transition:background .15s,color .15s;text-decoration:none;min-width:52px;}
         .v-btn:hover{background:#21262d;color:#e6edf3;}
         .v-btn.active .v-btn-icon{background:#1f6feb;color:white;}
@@ -467,8 +445,6 @@ function ViewerRoom() {
         .v-btn-icon{width:44px;height:44px;border-radius:50%;background:#21262d;display:flex;align-items:center;justify-content:center;transition:background .15s;}
         .v-btn:hover .v-btn-icon{background:#30363d;}
         .v-btn-label{font-size:0.68rem;font-weight:500;white-space:nowrap;}
-
-        /* Emoji */
         .v-emoji-picker{position:absolute;bottom:100px;left:50%;transform:translateX(-50%);background:#161b22;border:1px solid #21262d;border-radius:12px;padding:12px 16px;display:flex;gap:8px;flex-wrap:wrap;justify-content:center;max-width:300px;box-shadow:0 8px 32px rgba(0,0,0,.6);z-index:200;}
         .v-emoji-btn{width:42px;height:42px;background:none;border:none;font-size:1.5rem;cursor:pointer;border-radius:8px;transition:background .15s;display:flex;align-items:center;justify-content:center;}
         .v-emoji-btn:hover{background:#21262d;}
