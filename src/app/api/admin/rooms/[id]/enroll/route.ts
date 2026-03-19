@@ -43,7 +43,7 @@ export async function POST(
   const { userId } = await req.json()
   if (!userId) return NextResponse.json({ error: "userId requis" }, { status: 400 })
 
-  const user = await prisma.user.findUnique({ where: { keycloakId: session.user.id } })
+  const user = await prisma.user.findUnique({ where: { id: session.user.id } })
   const room = await prisma.session.findUnique({ where: { id: sessionId } })
   if (!room) return NextResponse.json({ error: "Salle introuvable" }, { status: 404 })
   if (user?.role === "MODERATOR" && room.creatorId !== user.id)
@@ -71,7 +71,7 @@ export async function DELETE(
   const { id: sessionId } = await params
   const { userId } = await req.json()
 
-  const user = await prisma.user.findUnique({ where: { keycloakId: session.user.id } })
+  const user = await prisma.user.findUnique({ where: { id: session.user.id } })
   const room = await prisma.session.findUnique({ where: { id: sessionId } })
   if (!room) return NextResponse.json({ error: "Salle introuvable" }, { status: 404 })
   if (user?.role === "MODERATOR" && room.creatorId !== user.id)

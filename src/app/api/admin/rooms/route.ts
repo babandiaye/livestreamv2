@@ -9,7 +9,7 @@ export async function GET() {
   if (!session || !["ADMIN", "MODERATOR"].includes(session.user.role))
     return NextResponse.json({ error: "Non autorisé" }, { status: 403 })
 
-  const user = await prisma.user.findUnique({ where: { keycloakId: session.user.id } })
+  const user = await prisma.user.findUnique({ where: { id: session.user.id } })
   if (!user) return NextResponse.json({ error: "Utilisateur non trouvé" }, { status: 404 })
 
   const where = user.role === "MODERATOR" ? { creatorId: user.id } : {}

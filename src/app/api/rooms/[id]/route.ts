@@ -13,7 +13,7 @@ export async function DELETE(
   const room = await prisma.session.findUnique({ where: { id } })
   if (!room) return NextResponse.json({ error: "Salle non trouvée" }, { status: 404 })
 
-  const user = await prisma.user.findUnique({ where: { keycloakId: session.user.id } })
+  const user = await prisma.user.findUnique({ where: { id: session.user.id } })
   if (!user) return NextResponse.json({ error: "Non autorisé" }, { status: 403 })
 
   // Admin peut supprimer n'importe quelle salle, modérateur seulement les siennes
@@ -38,7 +38,7 @@ export async function PATCH(
   const room = await prisma.session.findUnique({ where: { id } })
   if (!room) return NextResponse.json({ error: "Salle non trouvée" }, { status: 404 })
 
-  const user = await prisma.user.findUnique({ where: { keycloakId: session.user.id } })
+  const user = await prisma.user.findUnique({ where: { id: session.user.id } })
   if (!user) return NextResponse.json({ error: "Non autorisé" }, { status: 403 })
 
   // Admin peut modifier n'importe quelle salle, modérateur seulement les siennes

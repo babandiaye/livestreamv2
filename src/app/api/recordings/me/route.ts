@@ -9,7 +9,7 @@ export async function GET() {
   if (!session) return NextResponse.json({ error: "Non authentifié" }, { status: 401 })
 
   const user = await prisma.user.findUnique({
-    where: { keycloakId: session.user.id },
+    where: { id: session.user.id },
   })
   if (!user) return NextResponse.json({ error: "Utilisateur non trouvé" }, { status: 404 })
 

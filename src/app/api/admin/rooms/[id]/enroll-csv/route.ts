@@ -14,7 +14,7 @@ export async function POST(
 
   const { id: sessionId } = await params
 
-  const user = await prisma.user.findUnique({ where: { keycloakId: session.user.id } })
+  const user = await prisma.user.findUnique({ where: { id: session.user.id } })
   const room = await prisma.session.findUnique({ where: { id: sessionId } })
   if (!room) return NextResponse.json({ error: "Salle introuvable" }, { status: 404 })
   if (user?.role === "MODERATOR" && room.creatorId !== user.id)
