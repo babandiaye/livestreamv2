@@ -104,7 +104,7 @@ export default function DashboardClient({ user }: { user: User }) {
           <span className="gl-user-badge">{user.role}</span>
           <span className="gl-user-name">{user.name ?? user.email}</span>
           {(user.role === "ADMIN" || user.role === "MODERATOR") && (
-            <a href="/admin" className="gl-btn-admin">⚙ Admin</a>
+            <a href="/admin" className="gl-btn-admin">Admin</a>
           )}
           <button className="gl-btn-outline" onClick={() => signOut({ callbackUrl: "/" })}>
             Déconnexion
@@ -203,7 +203,7 @@ export default function DashboardClient({ user }: { user: User }) {
                               <span className="gl-rec-name">{rec.filename}</span>
                               {rec.duration && (
                                 <span className="gl-rec-duration">
-                                  ⏱ {formatDuration(rec.duration)}
+                                  {formatDuration(rec.duration)}
                                 </span>
                               )}
                               <span className="gl-rec-date">
@@ -218,7 +218,7 @@ export default function DashboardClient({ user }: { user: User }) {
                                     playingKey === rec.s3Key ? null : rec.s3Key
                                   )}
                                 >
-                                  {playingKey === rec.s3Key ? "✖ Fermer" : "▶ Voir"}
+                                  {playingKey === rec.s3Key ? "Fermer" : "Voir"}
                                 </button>
                                 <a
                                   href={`/api/download-recording?key=${encodeURIComponent(rec.s3Key)}`}
@@ -282,7 +282,7 @@ export default function DashboardClient({ user }: { user: User }) {
                       <div className="gl-setting-row">
                         <span>Statut</span>
                         <span className={`gl-badge ${room.status === "LIVE" ? "on" : "off"}`}>
-                          {room.status === "LIVE" ? "🔴 En direct" :
+                          {room.status === "LIVE" ? "En direct" :
                            room.status === "ENDED" ? "Terminée" : "Programmée"}
                         </span>
                       </div>
@@ -304,6 +304,12 @@ export default function DashboardClient({ user }: { user: User }) {
         )}
       </main>
 
+      <footer className="gl-footer">
+        <p>Ministère de l&apos;Enseignement Supérieur, de la Recherche et de l&apos;Innovation</p>
+        <p className="gl-footer-strong">Université Numérique Cheikh Hamidou Kane (UN-CHK)</p>
+        <p className="gl-footer-copy">© DITSI – UN-CHK – 2026 – Tous droits réservés</p>
+      </footer>
+
       {showCreate && (
         <CreateRoomModal
           onClose={() => setShowCreate(false)}
@@ -312,7 +318,7 @@ export default function DashboardClient({ user }: { user: User }) {
       )}
 
       <style>{`
-        .gl-root{min-height:100vh;background:#f0f4ff;font-family:'Google Sans','Segoe UI',system-ui,sans-serif;color:#1a1a2e;}
+        .gl-root{min-height:100vh;display:flex;flex-direction:column;background:#f5f8ff;font-family:'Google Sans','Segoe UI',system-ui,sans-serif;color:#1a1a2e;}
         .gl-header{display:flex;align-items:center;justify-content:space-between;padding:12px 48px;background:white;border-bottom:1px solid #e2e8f0;box-shadow:0 1px 4px rgba(0,0,0,.06);}
         .gl-header-right{display:flex;align-items:center;gap:12px;}
         .gl-user-name{font-size:0.88rem;color:#5f6368;font-weight:500;}
@@ -320,13 +326,13 @@ export default function DashboardClient({ user }: { user: User }) {
         .gl-logo{display:flex;align-items:center;}
         .gl-btn-outline{padding:7px 16px;border:1.5px solid #0065b1;border-radius:8px;background:white;color:#0065b1;font-size:0.82rem;font-weight:500;cursor:pointer;font-family:inherit;}
         .gl-btn-outline:hover{background:#e8f0fe;}
-        .gl-btn-admin{padding:7px 14px;background:#f1f5f9;border:1.5px solid #e2e8f0;border-radius:8px;color:#475569;font-size:0.82rem;font-weight:500;text-decoration:none;transition:all .2s;}
+        .gl-btn-admin{padding:7px 14px;background:#f1f5f9;border:1.5px solid #e2e8f0;border-radius:8px;color:#475569;font-size:0.82rem;font-weight:500;text-decoration:none;}
         .gl-btn-admin:hover{background:#e2e8f0;}
-        .gl-main{max-width:960px;margin:0 auto;padding:40px 24px;}
+        .gl-main{max-width:960px;margin:0 auto;padding:40px 24px;flex:1;width:100%;}
         .gl-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:32px;}
         .gl-title{font-size:1.8rem;font-weight:700;color:#1a1a2e;}
         .gl-subtitle{font-size:0.88rem;color:#94a3b8;margin-top:4px;}
-        .gl-btn-primary{padding:10px 22px;background:#0065b1;color:white;border:none;border-radius:8px;font-size:0.9rem;font-weight:600;cursor:pointer;font-family:inherit;transition:background .2s;}
+        .gl-btn-primary{padding:10px 22px;background:#0065b1;color:white;border:none;border-radius:8px;font-size:0.9rem;font-weight:600;cursor:pointer;font-family:inherit;}
         .gl-btn-primary:hover{background:#004d8c;}
         .gl-loading{display:flex;align-items:center;gap:12px;color:#94a3b8;padding:48px 0;}
         .gl-spinner{width:20px;height:20px;border:2px solid #e2e8f0;border-top-color:#0065b1;border-radius:50%;animation:spin .7s linear infinite;display:inline-block;}
@@ -342,13 +348,13 @@ export default function DashboardClient({ user }: { user: User }) {
         .gl-room-desc{font-size:0.82rem;color:#64748b;margin-top:4px;}
         .gl-room-date{font-size:0.75rem;color:#94a3b8;margin-top:6px;}
         .gl-room-actions{display:flex;align-items:center;gap:10px;flex-shrink:0;}
-        .gl-btn-copy{display:flex;align-items:center;gap:6px;padding:8px 14px;background:white;border:1.5px solid #e2e8f0;border-radius:8px;font-size:0.82rem;color:#5f6368;cursor:pointer;font-family:inherit;transition:all .2s;}
+        .gl-btn-copy{display:flex;align-items:center;gap:6px;padding:8px 14px;background:white;border:1.5px solid #e2e8f0;border-radius:8px;font-size:0.82rem;color:#5f6368;cursor:pointer;font-family:inherit;}
         .gl-btn-copy:hover{border-color:#0065b1;color:#0065b1;}
         .gl-btn-copy-sm{padding:3px 10px;background:white;border:1px solid #e2e8f0;border-radius:5px;font-size:0.75rem;color:#5f6368;cursor:pointer;font-family:inherit;}
-        .gl-btn-start{padding:10px 20px;background:#0065b1;color:white;border:none;border-radius:8px;font-size:0.88rem;font-weight:600;cursor:pointer;font-family:inherit;transition:background .2s;}
+        .gl-btn-start{padding:10px 20px;background:#0065b1;color:white;border:none;border-radius:8px;font-size:0.88rem;font-weight:600;cursor:pointer;font-family:inherit;}
         .gl-btn-start:hover{background:#004d8c;}
         .gl-tabs{display:flex;border-bottom:1px solid #f1f5f9;padding:0 24px;}
-        .gl-tab{padding:12px 16px;background:none;border:none;font-size:0.85rem;font-weight:500;color:#94a3b8;cursor:pointer;font-family:inherit;border-bottom:2px solid transparent;margin-bottom:-1px;display:flex;align-items:center;gap:6px;transition:color .15s;}
+        .gl-tab{padding:12px 16px;background:none;border:none;font-size:0.85rem;font-weight:500;color:#94a3b8;cursor:pointer;font-family:inherit;border-bottom:2px solid transparent;margin-bottom:-1px;display:flex;align-items:center;gap:6px;}
         .gl-tab.active{color:#0065b1;border-bottom-color:#0065b1;}
         .gl-tab-badge{background:#0065b1;color:white;border-radius:10px;padding:1px 6px;font-size:0.68rem;font-weight:700;}
         .gl-tab-content{padding:16px 24px;}
@@ -360,20 +366,24 @@ export default function DashboardClient({ user }: { user: User }) {
         .gl-rec-duration{color:#0065b1;font-size:0.78rem;flex-shrink:0;}
         .gl-rec-date{color:#94a3b8;flex-shrink:0;}
         .gl-rec-btns{display:flex;gap:6px;flex-shrink:0;}
-        .gl-rec-btn-play{padding:5px 12px;background:#0065b1;color:white;border:none;border-radius:6px;font-size:0.78rem;font-weight:500;cursor:pointer;font-family:inherit;transition:background .2s;}
+        .gl-rec-btn-play{padding:5px 12px;background:#0065b1;color:white;border:none;border-radius:6px;font-size:0.78rem;font-weight:500;cursor:pointer;font-family:inherit;}
         .gl-rec-btn-play:hover{background:#004d8c;}
-        .gl-rec-btn-dl{padding:5px 12px;background:white;color:#1e7e34;border:1px solid rgba(30,126,52,.3);border-radius:6px;font-size:0.78rem;font-weight:500;text-decoration:none;transition:all .2s;}
-        .gl-rec-btn-dl:hover{background:#e8f5e9;border-color:#1e7e34;}
-        .gl-rec-player{padding:12px;background:#000;border-top:1px solid #e2e8f0;}
+        .gl-rec-btn-dl{padding:5px 12px;background:white;color:#1e7e34;border:1px solid rgba(30,126,52,.3);border-radius:6px;font-size:0.78rem;font-weight:500;text-decoration:none;}
+        .gl-rec-btn-dl:hover{background:#e8f5e9;}
+        .gl-rec-player{padding:12px;background:#000;}
         .gl-settings{display:flex;flex-direction:column;gap:12px;}
         .gl-setting-row{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid #f1f5f9;font-size:0.88rem;color:#5f6368;}
         .gl-room-slug{background:#f1f5f9;padding:3px 8px;border-radius:5px;font-size:0.8rem;color:#1a1a2e;}
         .gl-badge{padding:3px 10px;border-radius:20px;font-size:0.75rem;font-weight:600;}
         .gl-badge.on{background:#dcfce7;color:#16a34a;}
         .gl-badge.off{background:#f1f5f9;color:#94a3b8;}
-        .gl-btn-delete{margin-top:8px;padding:8px 16px;background:white;border:1.5px solid #ef4444;color:#ef4444;border-radius:8px;font-size:0.82rem;font-weight:500;cursor:pointer;font-family:inherit;transition:all .2s;}
+        .gl-btn-delete{margin-top:8px;padding:8px 16px;background:white;border:1.5px solid #ef4444;color:#ef4444;border-radius:8px;font-size:0.82rem;font-weight:500;cursor:pointer;font-family:inherit;}
         .gl-btn-delete:hover:not(:disabled){background:#ef4444;color:white;}
         .gl-btn-delete:disabled{opacity:.5;cursor:not-allowed;}
+        .gl-footer{background:white;border-top:2px solid rgba(0,101,177,0.12);padding:20px 48px;text-align:center;display:flex;flex-direction:column;gap:3px;}
+        .gl-footer p{font-size:0.78rem;color:#5f6368;margin:0;}
+        .gl-footer-strong{font-size:0.88rem !important;font-weight:700;color:#0065b1 !important;}
+        .gl-footer-copy{font-size:0.72rem !important;color:#9aa0a6 !important;}
       `}</style>
     </div>
   )
