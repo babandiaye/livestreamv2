@@ -110,6 +110,7 @@ function ViewerRoom() {
   const [shareOn, setShareOn] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [floatingEmojis, setFloatingEmojis] = useState<{id:number;emoji:string;x:number}[]>([]);
+  const [returnUrl, setReturnUrl] = useState("/");
 
   const getMeta = (p: Participant): ParticipantMetadata => {
     try { return JSON.parse(p.metadata || "{}"); } catch { return { hand_raised: false, invited_to_stage: false, avatar_image: "" }; }
@@ -121,6 +122,12 @@ function ViewerRoom() {
   const handRaised = myMeta.hand_raised;
   const micOn = localParticipant.isMicrophoneEnabled;
   const camOn = localParticipant.isCameraEnabled;
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const r = params.get("returnUrl");
+    if (r) setReturnUrl(r);
+  }, []);
 
   useEffect(() => {
     if (!onStage) {
@@ -211,7 +218,7 @@ function ViewerRoom() {
                   <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="2" y="3" width="20" height="14" rx="2"/><polyline points="8 21 12 17 16 21"/></svg>
                 </div>
                 <p className="v-no-video-title">En attente du stream...</p>
-                <p className="v-no-video-sub">L'animateur n'a pas encore démarré</p>
+                <p className="v-no-video-sub">L&apos;animateur n&apos;a pas encore démarré</p>
               </div>
             )}
             {mainCamTrack && !screenTrack && (
@@ -365,10 +372,10 @@ function ViewerRoom() {
               <span className="v-btn-label">Chat</span>
             </button>
 
-            <a href="/" className="v-btn quit">
+            <a href={returnUrl} className="v-btn quit">
               <div className="v-btn-icon">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M6.62 10.79a15.05 15.05 0 0 0 6.59 6.59l2.2-2.2a1 1 0 0 1 1.01-.24c1.12.37 2.33.57 3.58.57a1 1 0 0 1 1 1V20a1 1 0 0 1-1 1C10.61 21 3 13.39 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.25.2 2.46.57 3.58a1 1 0 0 1-.25 1.01l-2.2 2.2z" transform="rotate(135 12 12)"/></svg>
-              </div>
+            </div>
               <span className="v-btn-label">Quitter</span>
             </a>
           </div>

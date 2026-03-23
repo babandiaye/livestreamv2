@@ -8,22 +8,28 @@ export async function POST(req: NextRequest) {
   const authError = validateMoodleKey(req)
   if (authError) return authError
 
-  const { courseId, title, description, moderatorEmail } = await req.json()
+  const { courseId, meetingId, title, description, moderatorEmail } = await req.json()
 
   if (!courseId || !title || !moderatorEmail)
     return NextResponse.json({ error: "courseId, title et moderatorEmail requis" }, { status: 400 })
 
-  // Trouver le modérateur en base
   const moderator = await prisma.user.findUnique({
     where: { email: moderatorEmail },
   })
   if (!moderator)
     return NextResponse.json({ error: "Modérateur introuvable — doit se connecter une fois sur la plateforme" }, { status: 404 })
 
-  // Chercher si une salle existe déjà pour ce cours
-  let room = await prisma.session.findFirst({
-    where: { moodleCourseId: courseId },
-  })
+  // Chercher par meetingId si fourni, sinon par courseId
+  let room = null
+  if (meetingId) {
+    room = await prisma.session.findFirst({
+      where: { moodleMeetingId: meetingId },
+    })
+  } else {
+    room = await prisma.session.findFirst({
+      where: { moodleCourseId: courseId },
+    })
+  }
 
   if (!room) {
     const roomName = title.toLowerCase()
@@ -38,6 +44,7 @@ export async function POST(req: NextRequest) {
         description: description ?? null,
         creatorId: moderator.id,
         moodleCourseId: courseId,
+        moodleMeetingId: meetingId ?? null,
         chatEnabled: true,
         participationEnabled: false,
       },
