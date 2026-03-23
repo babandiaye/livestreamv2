@@ -103,7 +103,7 @@ export default function DashboardClient({ user }: { user: User }) {
         <div className="gl-header-right">
           <span className="gl-user-badge">{user.role}</span>
           <span className="gl-user-name">{user.name ?? user.email}</span>
-          {(user.role === "ADMIN" || user.role === "MODERATOR") && (
+          {user.role === "ADMIN" && (
             <a href="/admin" className="gl-btn-admin">Admin</a>
           )}
           <button className="gl-btn-outline" onClick={() => signOut({ callbackUrl: "/" })}>
