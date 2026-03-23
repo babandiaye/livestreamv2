@@ -13,32 +13,32 @@ function LoginContent() {
       icon: "🎥",
       title: "Démarrer une session",
       desc: "Lancez une classe virtuelle en direct avec vidéo, audio, partage d'écran et outils pédagogiques intégrés.",
-      color: "#1a56db", bg: "#e8f0fe", border: "#b8d0fb",
+      color: "#0065b1", bg: "#e8f4ff", border: "#b8d9f8",
     },
     {
       icon: "📹",
       title: "Enregistrer vos sessions",
       desc: "Enregistrez automatiquement vos webinaires et rendez-les disponibles pour les étudiants après la session.",
-      color: "#0f6e56", bg: "#e1f5ee", border: "#9fe1cb",
+      color: "#2fb344", bg: "#e6f7eb", border: "#a8ddb5",
     },
     {
       icon: "🏠",
       title: "Gérer vos salles",
       desc: "Créez et configurez vos salles de cours, définissez les accès et paramétrez chaque session selon vos besoins.",
-      color: "#854f0b", bg: "#faeeda", border: "#fac775",
+      color: "#b85c00", bg: "#fff3e0", border: "#ffcc80",
     },
     {
       icon: "👥",
       title: "Gérer les participants",
       desc: "Enrôlez vos étudiants individuellement ou en masse via CSV, attribuez des rôles et suivez les participations.",
-      color: "#0c447c", bg: "#e6f1fb", border: "#85b7eb",
+      color: "#004d8c", bg: "#e8f4ff", border: "#90caf9",
     },
   ];
 
   return (
     <main style={{
       minHeight: "100vh", display: "flex", flexDirection: "column",
-      background: "#f5f8ff",
+      background: "#f8fafd",
       fontFamily: "'Google Sans','Segoe UI',system-ui,sans-serif",
     }}>
       <style>{`
@@ -48,7 +48,23 @@ function LoginContent() {
           gap: 20px;
           max-width: 1100px;
           margin: 0 auto;
+          width: 100%;
         }
+        .feature-card {
+          background: white;
+          border-radius: 14px;
+          padding: 24px 20px;
+          cursor: default;
+          transition: background 0.2s, box-shadow 0.2s, transform 0.15s;
+        }
+        .feature-card:hover {
+          box-shadow: 0 6px 24px rgba(0,0,0,0.09);
+          transform: translateY(-2px);
+        }
+        .feature-card-0:hover { background: #dceefb; }
+        .feature-card-1:hover { background: #d4f0dc; }
+        .feature-card-2:hover { background: #ffe0b2; }
+        .feature-card-3:hover { background: #dceefb; }
         .header-title { font-size: 0.95rem; font-weight: 700; color: #2d4a6e; }
         @media (max-width: 900px) {
           .features-grid { grid-template-columns: repeat(2, 1fr) !important; }
@@ -76,7 +92,10 @@ function LoginContent() {
             padding: "10px 24px", background: "#0065b1", color: "white",
             border: "none", borderRadius: 8, fontSize: "0.9rem", fontWeight: 600,
             cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap",
+            transition: "background 0.2s",
           }}
+          onMouseEnter={e => (e.currentTarget.style.background = "#004d8c")}
+          onMouseLeave={e => (e.currentTarget.style.background = "#0065b1")}
         >
           S&apos;identifier
         </button>
@@ -109,10 +128,9 @@ function LoginContent() {
           Découvrez les fonctionnalités
         </p>
         <div className="features-grid">
-          {features.map(f => (
-            <div key={f.title} style={{
-              background: "white", borderRadius: 14,
-              border: `1.5px solid ${f.border}`, padding: "24px 20px",
+          {features.map((f, i) => (
+            <div key={f.title} className={`feature-card feature-card-${i}`} style={{
+              border: `1.5px solid ${f.border}`,
             }}>
               <div style={{
                 width: 52, height: 52, borderRadius: 12, background: f.bg,

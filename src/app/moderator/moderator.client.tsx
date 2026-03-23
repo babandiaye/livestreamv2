@@ -594,7 +594,7 @@ export default function ModeratorClient({ user }: { user: User }) {
 
       <style>{`
         *{box-sizing:border-box;margin:0;padding:0;}
-        .mod-root{min-height:100vh;display:flex;flex-direction:column;background:#f0f4ff;font-family:'Google Sans','Segoe UI',system-ui,sans-serif;color:#1a1a2e;}
+        .mod-root{min-height:100vh;display:flex;flex-direction:column;background:#f8fafd;font-family:'Google Sans','Segoe UI',system-ui,sans-serif;color:#1a1a2e;}
         .mod-header{display:flex;align-items:center;justify-content:space-between;padding:0 32px;height:64px;background:#fff;border-bottom:1px solid #e2e8f0;}
         .mod-logo-link{display:flex;align-items:center;}
         .mod-header-center{display:flex;align-items:center;gap:10px;}
@@ -625,7 +625,7 @@ export default function ModeratorClient({ user }: { user: User }) {
         .mod-room-item.active{background:#e8f4ff;border-left-color:#0065b1;}
         .mod-room-item-top{display:flex;align-items:center;justify-content:space-between;gap:8px;}
         .mod-room-title{font-size:0.88rem;font-weight:600;color:#1a1a2e;}
-        .mod-live-dot{font-size:0.7rem;font-weight:700;color:#16a34a;}
+        .mod-live-dot{font-size:0.7rem;font-weight:700;color:#2fb344;}
         .mod-room-meta{font-size:0.74rem;color:#9ca3af;margin-top:3px;}
         .mod-room-panel-header{display:flex;align-items:flex-start;justify-content:space-between;padding:20px 24px;border-bottom:1px solid #f0f7ff;gap:12px;}
         .mod-room-panel-title{font-size:1.05rem;font-weight:700;color:#1a1a2e;}
@@ -638,14 +638,14 @@ export default function ModeratorClient({ user }: { user: User }) {
         .mod-setting-row{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid #f0f7ff;font-size:0.88rem;color:#374151;}
         .mod-setting-row code{background:#f1f5f9;padding:3px 8px;border-radius:5px;font-size:0.78rem;}
         .mod-badge{padding:3px 10px;border-radius:20px;font-size:0.75rem;font-weight:600;}
-        .mod-badge.on{background:#dcfce7;color:#16a34a;}
+        .mod-badge.on{background:#dcfce7;color:#2fb344;}
         .mod-badge.off{background:#f1f5f9;color:#94a3b8;}
         .mod-btn{display:inline-flex;align-items:center;gap:5px;padding:7px 16px;border-radius:8px;font-size:0.83rem;font-weight:600;font-family:inherit;cursor:pointer;text-decoration:none;border:none;white-space:nowrap;transition:filter .15s;}
-        .mod-btn:hover:not(:disabled){filter:brightness(.92);}
+        .mod-btn-outline:hover:not(:disabled){background:#e8f4ff;} .mod-btn-primary:hover:not(:disabled){background:#004d8c;} .mod-btn-green:hover:not(:disabled){background:#e6f7eb;} .mod-btn-delete:hover:not(:disabled){background:#fff0f0;}
         .mod-btn:disabled{opacity:.45;cursor:not-allowed;}
         .mod-btn-outline{background:#fff;border:1.5px solid #0065b1;color:#0065b1;}
         .mod-btn-primary{background:#0065b1;color:#fff;}
-        .mod-btn-green{background:#fff;border:1.5px solid #16a34a;color:#16a34a;}
+        .mod-btn-green{background:#fff;border:1.5px solid #2fb344;color:#2fb344;}
         .mod-btn-delete{margin-top:8px;background:#fff;border:1.5px solid #e53e3e;color:#e53e3e;}
         .mod-btn-copy-sm{padding:3px 10px;background:white;border:1px solid #e2e8f0;border-radius:5px;font-size:0.75rem;color:#5f6368;cursor:pointer;font-family:inherit;}
         .mod-loading{display:flex;align-items:center;gap:10px;padding:40px 24px;color:#9ca3af;}
@@ -694,7 +694,7 @@ export default function ModeratorClient({ user }: { user: User }) {
         .ep-csv-info code{font-family:monospace;font-size:0.76rem;background:#e8f4ff;padding:1px 4px;border-radius:3px;color:#0065b1;}
         .ep-dropzone{border:2px dashed #d1e4f5;border-radius:9px;padding:20px;text-align:center;cursor:pointer;transition:all .15s;}
         .ep-dropzone:hover,.ep-dropzone.drag{border-color:#0065b1;background:#f0f7ff;}
-        .ep-dropzone.ok{border-color:#16a34a;background:#f0fdf4;}
+        .ep-dropzone.ok{border-color:#2fb344;background:#f0fdf4;}
         .ep-hint{font-size:0.82rem;color:#9ca3af;}
         .ep-fname{font-size:0.82rem;color:#1a1a2e;font-weight:600;}
         .ep-csv-err{font-size:0.78rem;color:#b91c1c;background:#fff0f0;border:1px solid #fecaca;border-radius:6px;padding:6px 10px;}
@@ -702,7 +702,7 @@ export default function ModeratorClient({ user }: { user: User }) {
         .ep-stat{display:flex;flex-direction:column;align-items:center;padding:10px 6px;border-radius:7px;gap:3px;}
         .ep-sv{font-size:1.3rem;font-weight:700;}.ep-sl{font-size:0.68rem;font-weight:500;}
         .ep-stat-total{background:#f8fbff;}.ep-stat-total .ep-sv{color:#0065b1;}.ep-stat-total .ep-sl{color:#9ca3af;}
-        .ep-stat-ok{background:#f0fdf4;}.ep-stat-ok .ep-sv{color:#16a34a;}.ep-stat-ok .ep-sl{color:#16a34a;}
+        .ep-stat-ok{background:#f0fdf4;}.ep-stat-ok .ep-sv{color:#2fb344;}.ep-stat-ok .ep-sl{color:#2fb344;}
         .ep-stat-skip{background:#fffbeb;}.ep-stat-skip .ep-sv{color:#d97706;}.ep-stat-skip .ep-sl{color:#d97706;}
         .ep-stat-err{background:#fff0f0;}.ep-stat-err .ep-sv{color:#b91c1c;}.ep-stat-err .ep-sl{color:#b91c1c;}
         .ep-csv-detail{background:#f8fbff;border:1px solid #e8f4ff;border-radius:7px;padding:10px;}

@@ -225,7 +225,7 @@ export default function StudentClient({
 
       <style>{`
         *{box-sizing:border-box;margin:0;padding:0;}
-        .st-root{min-height:100vh;display:flex;flex-direction:column;background:#f0f4ff;font-family:'Google Sans','Segoe UI',system-ui,sans-serif;color:#1a1a2e;}
+        .st-root{min-height:100vh;display:flex;flex-direction:column;background:#f8fafd;font-family:'Google Sans','Segoe UI',system-ui,sans-serif;color:#1a1a2e;}
         .st-header{display:flex;align-items:center;justify-content:space-between;padding:0 32px;height:64px;background:#fff;border-bottom:1px solid #e2e8f0;}
         .st-logo-link{display:flex;align-items:center;}
         .st-header-right{display:flex;align-items:center;gap:12px;}
@@ -235,7 +235,7 @@ export default function StudentClient({
         .st-btn:disabled{opacity:.5;cursor:not-allowed;}
         .st-btn-outline{background:#fff;border:1.5px solid #0065b1;color:#0065b1;}
         .st-btn-primary{background:#0065b1;color:#fff;}
-        .st-btn-green{background:#fff;border:1.5px solid #16a34a;color:#16a34a;}
+        .st-btn-green{background:#fff;border:1.5px solid #2fb344;color:#2fb344;}
         .st-layout{display:flex;flex:1;max-width:1140px;margin:0 auto;width:100%;padding:24px 32px 40px;gap:20px;}
         .st-sidebar{width:280px;flex-shrink:0;background:#fff;border-radius:12px;border:1px solid #e2e8f0;overflow:hidden;align-self:start;}
         .st-sidebar-header{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid #f0f7ff;}
@@ -251,7 +251,7 @@ export default function StudentClient({
         .st-room-item.active{background:#e8f4ff;border-left-color:#0065b1;}
         .st-room-title{font-size:0.88rem;font-weight:600;color:#1a1a2e;}
         .st-room-meta{display:flex;align-items:center;gap:8px;margin-top:3px;font-size:0.75rem;color:#9ca3af;}
-        .st-live{color:#16a34a;font-weight:700;}
+        .st-live{color:#2fb344;font-weight:700;}
         .st-main{flex:1;min-width:0;}
         .st-placeholder{display:flex;flex-direction:column;align-items:center;justify-content:center;height:300px;background:#fff;border-radius:12px;border:1px solid #e2e8f0;gap:12px;color:#9ca3af;}
         .st-card{background:#fff;border-radius:12px;border:1px solid #e2e8f0;overflow:hidden;}

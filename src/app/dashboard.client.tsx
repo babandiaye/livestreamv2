@@ -325,7 +325,7 @@ export default function DashboardClient({ user }: { user: User }) {
         .gl-user-badge{font-size:0.7rem;font-weight:700;padding:2px 8px;border-radius:10px;background:#e8f0fe;color:#0065b1;text-transform:uppercase;}
         .gl-logo{display:flex;align-items:center;}
         .gl-btn-outline{padding:7px 16px;border:1.5px solid #0065b1;border-radius:8px;background:white;color:#0065b1;font-size:0.82rem;font-weight:500;cursor:pointer;font-family:inherit;}
-        .gl-btn-outline:hover{background:#e8f0fe;}
+        .gl-btn-outline:hover{background:#e8f4ff;}
         .gl-btn-admin{padding:7px 14px;background:#f1f5f9;border:1.5px solid #e2e8f0;border-radius:8px;color:#475569;font-size:0.82rem;font-weight:500;text-decoration:none;}
         .gl-btn-admin:hover{background:#e2e8f0;}
         .gl-main{max-width:960px;margin:0 auto;padding:40px 24px;flex:1;width:100%;}
@@ -375,7 +375,7 @@ export default function DashboardClient({ user }: { user: User }) {
         .gl-setting-row{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid #f1f5f9;font-size:0.88rem;color:#5f6368;}
         .gl-room-slug{background:#f1f5f9;padding:3px 8px;border-radius:5px;font-size:0.8rem;color:#1a1a2e;}
         .gl-badge{padding:3px 10px;border-radius:20px;font-size:0.75rem;font-weight:600;}
-        .gl-badge.on{background:#dcfce7;color:#16a34a;}
+        .gl-badge.on{background:#dcfce7;color:#2fb344;}
         .gl-badge.off{background:#f1f5f9;color:#94a3b8;}
         .gl-btn-delete{margin-top:8px;padding:8px 16px;background:white;border:1.5px solid #ef4444;color:#ef4444;border-radius:8px;font-size:0.82rem;font-weight:500;cursor:pointer;font-family:inherit;}
         .gl-btn-delete:hover:not(:disabled){background:#ef4444;color:white;}
