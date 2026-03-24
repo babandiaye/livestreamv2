@@ -18,14 +18,21 @@ export async function POST(req: NextRequest) {
   if (!room)
     return NextResponse.json({ error: "Salle introuvable" }, { status: 404 })
 
-  // Vérifier que l'étudiant est enrôlé
   const user = await prisma.user.findUnique({ where: { email: userEmail } })
+
   if (user) {
     const enrollment = await prisma.enrollment.findUnique({
       where: { userId_sessionId: { userId: user.id, sessionId: roomId } },
     })
-    if (!enrollment)
-      return NextResponse.json({ error: "Étudiant non enrôlé dans cette salle" }, { status: 403 })
+    if (!enrollment) {
+      await prisma.enrollment.create({
+        data: {
+          userId: user.id,
+          sessionId: roomId,
+          createdBy: "moodle-auto",
+        },
+      })
+    }
   }
 
   const at = new AccessToken(
