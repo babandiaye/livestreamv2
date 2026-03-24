@@ -46,6 +46,7 @@ function HostRoom({ returnUrl = "/" }: { returnUrl?: string }) {
   const [egressId, setEgressId] = useState<string | null>(null);
   const [recording, setRecording] = useState(false);
   const [recordingLoading, setRecordingLoading] = useState(false);
+  const [recordingWaiting, setRecordingWaiting] = useState(false);
 
   const [streamingEgressId, setStreamingEgressId] = useState<string | null>(null);
   const [streaming, setStreaming] = useState(false);
@@ -95,6 +96,23 @@ function HostRoom({ returnUrl = "/" }: { returnUrl?: string }) {
   };
 
   const startRecording = async (): Promise<string | null> => {
+    // Vérifier qu'une source vidéo est active
+    const hasCamera = localParticipant.isCameraEnabled;
+    const hasScreen = tracks.some(
+      t => t.source === Track.Source.ScreenShare &&
+           t.participant.identity === localParticipant.identity
+    );
+
+    if (!hasCamera && !hasScreen) {
+      alert("Activez votre caméra ou partagez votre écran avant de démarrer l'enregistrement.");
+      return null;
+    }
+
+    // Attendre que les tracks soient bien publiés et stables côté LiveKit
+    setRecordingWaiting(true);
+    await new Promise(resolve => setTimeout(resolve, 3000));
+    setRecordingWaiting(false);
+
     setRecordingLoading(true);
     try {
       const res = await fetch("/api/start_recording", {
@@ -196,9 +214,17 @@ function HostRoom({ returnUrl = "/" }: { returnUrl?: string }) {
           <button
             className={`h-btn-rec${recording ? " active" : ""}`}
             onClick={recording ? stopRecording : startRecording}
-            disabled={recordingLoading}
+            disabled={recordingLoading || recordingWaiting}
+            title={!camOn && !shareOn ? "Activez la caméra ou partagez l'écran avant d'enregistrer" : ""}
           >
-            {recordingLoading ? <span className="h-rec-spinner" /> : recording ? <><span className="h-rec-dot" />Arrêter</> : <>⏺ Enreg.</>}
+            {recordingWaiting
+              ? <><span className="h-rec-spinner" /> Préparation…</>
+              : recordingLoading
+                ? <span className="h-rec-spinner" />
+                : recording
+                  ? <><span className="h-rec-dot" />Arrêter</>
+                  : <>⏺ Enreg.</>
+            }
           </button>
           <button
             className={`h-btn-stream${streaming ? " active" : ""}`}
@@ -214,6 +240,13 @@ function HostRoom({ returnUrl = "/" }: { returnUrl?: string }) {
         <div className="h-rec-banner">
           <span className="h-rec-indicator" />
           Enregistrement en cours...
+        </div>
+      )}
+
+      {recordingWaiting && (
+        <div className="h-rec-banner" style={{background:"rgba(59,130,246,.08)",borderBottomColor:"rgba(59,130,246,.2)",color:"#60a5fa"}}>
+          <span className="h-rec-spinner" style={{marginRight:4}} />
+          Préparation de l&apos;enregistrement — vérification des flux vidéo…
         </div>
       )}
 
