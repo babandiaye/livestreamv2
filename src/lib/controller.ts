@@ -200,7 +200,6 @@ export class Controller {
       canPublishData: true,
     });
 
-    // Pour WHIP : la streamKey est le token d'authentification OBS
     const whip_token = ingress_type === "whip" ? ingress.streamKey : undefined;
 
     return {
@@ -247,10 +246,8 @@ export class Controller {
   async stopStream(session: Session) {
     const rooms = await this.roomService.listRooms([session.room_name]);
     if (rooms.length === 0) throw new Error("Room does not exist");
-
     const creator_identity = (JSON.parse(rooms[0].metadata) as RoomMetadata).creator_identity;
     if (creator_identity !== session.identity) throw new Error("Only the creator can stop the stream");
-
     await this.roomService.deleteRoom(session.room_name);
   }
 
@@ -287,7 +284,6 @@ export class Controller {
   async inviteToStage(session: Session, { identity }: InviteToStageParams) {
     const rooms = await this.roomService.listRooms([session.room_name]);
     if (rooms.length === 0) throw new Error("Room does not exist");
-
     const creator_identity = (JSON.parse(rooms[0].metadata) as RoomMetadata).creator_identity;
     if (creator_identity !== session.identity) throw new Error("Only the creator can invite to stage");
 
@@ -305,7 +301,6 @@ export class Controller {
 
     const rooms = await this.roomService.listRooms([session.room_name]);
     if (rooms.length === 0) throw new Error("Room does not exist");
-
     const creator_identity = (JSON.parse(rooms[0].metadata) as RoomMetadata).creator_identity;
     if (creator_identity !== session.identity && identity !== session.identity) {
       throw new Error("Only the creator or the participant can remove from stage");
@@ -314,7 +309,6 @@ export class Controller {
     const participant = await this.roomService.getParticipant(session.room_name, identity);
     const permission = participant.permission ?? defaultPermission();
     const metadata = this.getOrCreateParticipantMetadata(participant);
-
     metadata.hand_raised = false;
     metadata.invited_to_stage = false;
     permission.canPublish = false;
@@ -327,10 +321,12 @@ export class Controller {
     const permission = participant.permission ?? defaultPermission();
     const metadata = this.getOrCreateParticipantMetadata(participant);
     metadata.hand_raised = true;
-
     if (metadata.invited_to_stage) permission.canPublish = true;
-
     await this.roomService.updateParticipant(session.room_name, session.identity, JSON.stringify(metadata), permission);
+  }
+
+  async kickParticipant(room_name: string, identity: string) {
+    await this.roomService.removeParticipant(room_name, identity);
   }
 
   getOrCreateParticipantMetadata(participant: ParticipantInfo): ParticipantMetadata {

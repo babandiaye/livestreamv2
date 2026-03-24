@@ -13,22 +13,30 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.text()
     const authHeader = req.headers.get("Authorization") ?? ""
-
     const event = await receiver.receive(body, authHeader)
     console.log("[webhook] event:", event.event)
+
+    // Room terminée — mettre à jour le statut
+    if (event.event === "room_finished" && event.room) {
+      const roomName = event.room.name
+      console.log("[webhook] room_finished:", roomName)
+      await prisma.session.updateMany({
+        where: { roomName, status: "LIVE" },
+        data: { status: "ENDED", endedAt: new Date() },
+      })
+      console.log("[webhook] Session ENDED:", roomName)
+    }
 
     // Egress terminé avec succès
     if (event.event === "egress_ended" && event.egressInfo) {
       const egress = event.egressInfo
       const roomName = egress.roomName
-
       console.log("[webhook] egress_ended:", {
         egressId: egress.egressId,
         roomName,
         status: egress.status,
       })
 
-      // Récupérer les infos du fichier S3
       const fileResults = egress.fileResults
       if (fileResults && fileResults.length > 0) {
         const file = fileResults[0]
@@ -39,19 +47,16 @@ export async function POST(req: NextRequest) {
           ? Math.round(Number(file.duration) / 1_000_000_000)
           : null
 
-        //console.log("[webhook] file:", { s3Key, filename, size, duration })
         console.log("[webhook] file raw:", JSON.stringify(file))
-        // Trouver la session en base
+
         const dbSession = await prisma.session.findUnique({
           where: { roomName },
         })
 
         if (dbSession) {
-          // Vérifier si l'enregistrement existe déjà
           const existing = await prisma.recording.findFirst({
             where: { egressId: egress.egressId },
           })
-
           if (!existing) {
             await prisma.recording.create({
               data: {
@@ -66,12 +71,6 @@ export async function POST(req: NextRequest) {
             })
             console.log("[webhook] Recording saved to DB:", filename)
           }
-
-          // Mettre à jour le status session
-          await prisma.session.update({
-            where: { id: dbSession.id },
-            data: { status: "ENDED", endedAt: new Date() },
-          })
         } else {
           console.warn("[webhook] Session not found for roomName:", roomName)
         }

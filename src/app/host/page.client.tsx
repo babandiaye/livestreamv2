@@ -95,8 +95,16 @@ function HostRoom({ returnUrl = "/" }: { returnUrl?: string }) {
     });
   };
 
+  const kickParticipant = async (identity: string) => {
+    if (!confirm(`Exclure ${identity} de la session ?`)) return;
+    await fetch("/api/kick_participant", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${authToken}` },
+      body: JSON.stringify({ identity }),
+    });
+  };
+
   const startRecording = async (): Promise<string | null> => {
-    // Vérifier qu'une source vidéo est active
     const hasCamera = localParticipant.isCameraEnabled;
     const hasScreen = tracks.some(
       t => t.source === Track.Source.ScreenShare &&
@@ -108,7 +116,6 @@ function HostRoom({ returnUrl = "/" }: { returnUrl?: string }) {
       return null;
     }
 
-    // Attendre que les tracks soient bien publiés et stables côté LiveKit
     setRecordingWaiting(true);
     await new Promise(resolve => setTimeout(resolve, 3000));
     setRecordingWaiting(false);
@@ -372,6 +379,9 @@ function HostRoom({ returnUrl = "/" }: { returnUrl?: string }) {
                       {!isHost && meta.invited_to_stage && (
                         <button className="h-premove" onClick={() => removeFromStage(p.identity)}>Retirer</button>
                       )}
+                      {!isHost && (
+                        <button className="h-pkick" onClick={() => kickParticipant(p.identity)}>Exclure</button>
+                      )}
                     </div>
                   );
                 })}
@@ -539,7 +549,7 @@ function HostRoom({ returnUrl = "/" }: { returnUrl?: string }) {
         .h-panel-close:hover{background:#1e2d3d;color:#e2e8f0;}
         .h-plist{flex:1;overflow-y:auto;padding:12px;}
         .h-plist-count{font-size:0.72rem;font-weight:700;color:#475569;letter-spacing:.05em;padding:0 8px 10px;text-transform:uppercase;}
-        .h-prow{display:flex;align-items:center;gap:10px;padding:8px;border-radius:8px;transition:background .15s;}
+        .h-prow{display:flex;align-items:center;gap:8px;padding:8px;border-radius:8px;transition:background .15s;}
         .h-prow:hover{background:#1e2d3d;}
         .h-pavatar{width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#3b82f6,#1d4ed8);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:0.88rem;flex-shrink:0;color:white;}
         .h-pinfo{flex:1;min-width:0;}
@@ -552,6 +562,8 @@ function HostRoom({ returnUrl = "/" }: { returnUrl?: string }) {
         .h-pinvite:disabled{opacity:.4;cursor:not-allowed;}
         .h-premove{padding:4px 10px;background:rgba(239,68,68,.1);color:#f87171;border:1px solid rgba(239,68,68,.25);border-radius:5px;font-size:0.72rem;cursor:pointer;font-family:inherit;transition:background .15s;}
         .h-premove:hover{background:#ef4444;color:white;border-color:#ef4444;}
+        .h-pkick{padding:4px 10px;background:rgba(239,68,68,.18);color:#f87171;border:1px solid rgba(239,68,68,.4);border-radius:5px;font-size:0.72rem;cursor:pointer;font-family:inherit;transition:background .15s;margin-left:2px;}
+        .h-pkick:hover{background:#ef4444;color:white;border-color:#ef4444;}
         .h-controls{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;padding:0 24px;background:#0d1117;border-top:1px solid #1e2d3d;flex-shrink:0;height:88px;}
         .h-ctrl-left{display:flex;align-items:center;}
         .h-room-info{display:flex;align-items:center;gap:6px;font-size:0.78rem;color:#64748b;}
