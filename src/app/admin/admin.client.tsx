@@ -11,7 +11,7 @@ type Recording = {
   size: number | null; createdAt: string
   session: { id: string; title: string; roomName: string; creator: { name: string; email: string } }
 }
-type EnrolledUser = { id: string; name: string; email: string; role: string; enrolledAt: string }
+type EnrolledUser = { id: string; userId: string; name: string; email: string; role: string; enrolledAt: string }
 type SearchUser   = { id: string; name: string; email: string; role: string }
 type ImportResult = { summary: { total: number; created: number; enrolled: number; skipped: number }; skipped: string[] }
 
@@ -214,7 +214,7 @@ function EnrollPanel({ sessionId, sessionTitle }: { sessionId: string; sessionTi
             <span className="ep-uemail">{u.email}</span>
             <span className="ep-date">Enrôlé le {new Date(u.enrolledAt).toLocaleDateString("fr-FR")}</span>
           </div>
-          <button className="adm-btn adm-btn-delete ep-sm" disabled={removing===u.id} onClick={() => unenroll(u.id)}>{removing===u.id?"…":"Retirer"}</button>
+          <button className="adm-btn adm-btn-delete ep-sm" disabled={removing===u.userId} onClick={() => unenroll(u.userId)}>{removing===u.userId?"…":"Retirer"}</button>
         </div>
       ))}
 
