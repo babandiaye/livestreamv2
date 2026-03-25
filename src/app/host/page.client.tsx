@@ -14,21 +14,23 @@ export default function HostPage({
   authToken,
   roomToken,
   serverUrl,
+  returnUrl = "/",
 }: {
   authToken: string;
   roomToken: string;
   serverUrl: string;
+  returnUrl?: string;
 }) {
   return (
     <TokenContext.Provider value={authToken}>
       <LiveKitRoom serverUrl={serverUrl} token={roomToken} connect={true} style={{ height: "100dvh" }}>
-        <HostRoom />
+        <HostRoom returnUrl={returnUrl} />
       </LiveKitRoom>
     </TokenContext.Provider>
   );
 }
 
-function HostRoom() {
+function HostRoom({ returnUrl = "/" }: { returnUrl?: string }) {
   const authToken = useAuthToken();
   const room = useRoomContext();
   const { send: sendChat, chatMessages } = useChat();
@@ -44,6 +46,7 @@ function HostRoom() {
   const [egressId, setEgressId] = useState<string | null>(null);
   const [recording, setRecording] = useState(false);
   const [recordingLoading, setRecordingLoading] = useState(false);
+  const [recordingWaiting, setRecordingWaiting] = useState(false);
 
   const [streamingEgressId, setStreamingEgressId] = useState<string | null>(null);
   const [streaming, setStreaming] = useState(false);
@@ -92,7 +95,31 @@ function HostRoom() {
     });
   };
 
+  const kickParticipant = async (identity: string) => {
+    if (!confirm(`Exclure ${identity} de la session ?`)) return;
+    await fetch("/api/kick_participant", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${authToken}` },
+      body: JSON.stringify({ identity }),
+    });
+  };
+
   const startRecording = async (): Promise<string | null> => {
+    const hasCamera = localParticipant.isCameraEnabled;
+    const hasScreen = tracks.some(
+      t => t.source === Track.Source.ScreenShare &&
+           t.participant.identity === localParticipant.identity
+    );
+
+    if (!hasCamera && !hasScreen) {
+      alert("Activez votre caméra ou partagez votre écran avant de démarrer l'enregistrement.");
+      return null;
+    }
+
+    setRecordingWaiting(true);
+    await new Promise(resolve => setTimeout(resolve, 3000));
+    setRecordingWaiting(false);
+
     setRecordingLoading(true);
     try {
       const res = await fetch("/api/start_recording", {
@@ -132,7 +159,7 @@ function HostRoom() {
       method: "POST",
       headers: { Authorization: `Bearer ${authToken}` },
     });
-    window.location.href = "/";
+    window.location.href = returnUrl;
   };
 
   const launchEmoji = (emoji: string) => {
@@ -166,7 +193,6 @@ function HostRoom() {
 
   return (
     <div className="h-root">
-      {/* Topbar JokkoMeet style */}
       <div className="h-topbar">
         <div className="h-topbar-left">
           <div className="h-logo-wrap">
@@ -195,9 +221,17 @@ function HostRoom() {
           <button
             className={`h-btn-rec${recording ? " active" : ""}`}
             onClick={recording ? stopRecording : startRecording}
-            disabled={recordingLoading}
+            disabled={recordingLoading || recordingWaiting}
+            title={!camOn && !shareOn ? "Activez la caméra ou partagez l'écran avant d'enregistrer" : ""}
           >
-            {recordingLoading ? <span className="h-rec-spinner" /> : recording ? <><span className="h-rec-dot" />Arrêter</> : <>⏺ Enreg.</>}
+            {recordingWaiting
+              ? <><span className="h-rec-spinner" /> Préparation…</>
+              : recordingLoading
+                ? <span className="h-rec-spinner" />
+                : recording
+                  ? <><span className="h-rec-dot" />Arrêter</>
+                  : <>⏺ Enreg.</>
+            }
           </button>
           <button
             className={`h-btn-stream${streaming ? " active" : ""}`}
@@ -216,7 +250,13 @@ function HostRoom() {
         </div>
       )}
 
-      {/* Body */}
+      {recordingWaiting && (
+        <div className="h-rec-banner" style={{background:"rgba(59,130,246,.08)",borderBottomColor:"rgba(59,130,246,.2)",color:"#60a5fa"}}>
+          <span className="h-rec-spinner" style={{marginRight:4}} />
+          Préparation de l&apos;enregistrement — vérification des flux vidéo…
+        </div>
+      )}
+
       <div className="h-body">
         <div className="h-stage">
           <div className="h-main-video">
@@ -291,7 +331,6 @@ function HostRoom() {
           ))}
         </div>
 
-        {/* Sidebar panel */}
         {panel && (
           <div className="h-panel">
             <div className="h-panel-hdr">
@@ -340,6 +379,9 @@ function HostRoom() {
                       {!isHost && meta.invited_to_stage && (
                         <button className="h-premove" onClick={() => removeFromStage(p.identity)}>Retirer</button>
                       )}
+                      {!isHost && (
+                        <button className="h-pkick" onClick={() => kickParticipant(p.identity)}>Exclure</button>
+                      )}
                     </div>
                   );
                 })}
@@ -349,7 +391,6 @@ function HostRoom() {
         )}
       </div>
 
-      {/* Controls JokkoMeet style — icônes + labels */}
       <div className="h-controls">
         <div className="h-ctrl-left">
           <div className="h-room-info">
@@ -447,8 +488,6 @@ function HostRoom() {
       <style>{`
         *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
         .h-root{display:flex;flex-direction:column;height:100dvh;background:#0d1117;color:#e2e8f0;font-family:'Nunito','Segoe UI',system-ui,sans-serif;}
-
-        /* TOPBAR */
         .h-topbar{display:flex;align-items:center;justify-content:space-between;padding:0 20px;background:#0d1117;border-bottom:1px solid #1e2d3d;flex-shrink:0;height:52px;}
         .h-topbar-left{display:flex;align-items:center;gap:10px;}
         .h-topbar-center{display:flex;align-items:center;}
@@ -475,8 +514,6 @@ function HostRoom() {
         .h-rec-indicator{width:7px;height:7px;border-radius:50%;background:#ef4444;animation:pulse 1s ease-in-out infinite;flex-shrink:0;}
         @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
         @keyframes spin{to{transform:rotate(360deg)}}
-
-        /* BODY */
         .h-body{display:flex;flex:1;overflow:hidden;}
         .h-stage{flex:1;display:flex;flex-direction:column;overflow:hidden;position:relative;}
         .h-main-video{flex:1;background:#070d14;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden;}
@@ -501,8 +538,6 @@ function HostRoom() {
         .h-start-audio{position:absolute;inset:0;background:rgba(7,13,20,.85);color:white;border:none;font-size:1rem;cursor:pointer;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px);}
         .h-floating-emoji{position:absolute;bottom:10%;font-size:3rem;z-index:50;pointer-events:none;animation:floatUp 3s ease-out forwards;}
         @keyframes floatUp{0%{opacity:1;transform:translateY(0) scale(1)}50%{opacity:1;transform:translateY(-40vh) scale(1.3)}100%{opacity:0;transform:translateY(-80vh) scale(0.8)}}
-
-        /* SIDEBAR PANEL */
         .h-panel{width:320px;flex-shrink:0;background:#111827;border-left:1px solid #1e2d3d;display:flex;flex-direction:column;}
         .h-panel-hdr{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid #1e2d3d;flex-shrink:0;}
         .h-panel-tabs{display:flex;gap:4px;}
@@ -514,7 +549,7 @@ function HostRoom() {
         .h-panel-close:hover{background:#1e2d3d;color:#e2e8f0;}
         .h-plist{flex:1;overflow-y:auto;padding:12px;}
         .h-plist-count{font-size:0.72rem;font-weight:700;color:#475569;letter-spacing:.05em;padding:0 8px 10px;text-transform:uppercase;}
-        .h-prow{display:flex;align-items:center;gap:10px;padding:8px;border-radius:8px;transition:background .15s;}
+        .h-prow{display:flex;align-items:center;gap:8px;padding:8px;border-radius:8px;transition:background .15s;}
         .h-prow:hover{background:#1e2d3d;}
         .h-pavatar{width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#3b82f6,#1d4ed8);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:0.88rem;flex-shrink:0;color:white;}
         .h-pinfo{flex:1;min-width:0;}
@@ -527,8 +562,8 @@ function HostRoom() {
         .h-pinvite:disabled{opacity:.4;cursor:not-allowed;}
         .h-premove{padding:4px 10px;background:rgba(239,68,68,.1);color:#f87171;border:1px solid rgba(239,68,68,.25);border-radius:5px;font-size:0.72rem;cursor:pointer;font-family:inherit;transition:background .15s;}
         .h-premove:hover{background:#ef4444;color:white;border-color:#ef4444;}
-
-        /* CONTROLS BAR JokkoMeet style */
+        .h-pkick{padding:4px 10px;background:rgba(239,68,68,.18);color:#f87171;border:1px solid rgba(239,68,68,.4);border-radius:5px;font-size:0.72rem;cursor:pointer;font-family:inherit;transition:background .15s;margin-left:2px;}
+        .h-pkick:hover{background:#ef4444;color:white;border-color:#ef4444;}
         .h-controls{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;padding:0 24px;background:#0d1117;border-top:1px solid #1e2d3d;flex-shrink:0;height:88px;}
         .h-ctrl-left{display:flex;align-items:center;}
         .h-room-info{display:flex;align-items:center;gap:6px;font-size:0.78rem;color:#64748b;}
@@ -548,8 +583,6 @@ function HostRoom() {
         .h-ctrl-btn.quit{background:#ef4444;border-color:#ef4444;color:white;width:56px;border-radius:14px;}
         .h-ctrl-btn.quit:hover{background:#dc2626;border-color:#dc2626;}
         .h-badge-ctrl{position:absolute;top:-4px;right:-4px;background:#ef4444;color:white;border-radius:10px;padding:1px 4px;font-size:0.6rem;font-weight:700;}
-
-        /* EMOJI */
         .h-emoji-picker{position:absolute;bottom:96px;left:50%;transform:translateX(-50%);background:#111827;border:1px solid #1e2d3d;border-radius:14px;padding:12px 16px;display:flex;gap:8px;flex-wrap:wrap;justify-content:center;max-width:300px;box-shadow:0 8px 32px rgba(0,0,0,.6);z-index:200;}
         .h-emoji-btn{width:44px;height:44px;background:none;border:none;font-size:1.6rem;cursor:pointer;border-radius:10px;transition:background .15s;}
         .h-emoji-btn:hover{background:#1e2d3d;}

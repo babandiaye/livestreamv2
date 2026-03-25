@@ -28,9 +28,9 @@ type Recording = {
   session: { id: string; title: string; roomName: string; creator: { name: string; email: string } }
 }
 
-type EnrolledUser = { id: string; name: string; email: string; role: string; enrolledAt: string }
+type EnrolledUser = { id: string; userId: string; name: string; email: string; role: string; enrolledAt: string }
 type SearchUser = { id: string; name: string; email: string; role: string }
-type ImportResult = { summary: { total: number; enrolled: number; skipped: number; notFound: number }; notFound: string[]; skipped: string[] }
+type ImportResult = { summary: { total: number; created: number; enrolled: number; skipped: number }; skipped: string[] }
 
 type User = {
   id: string
@@ -159,7 +159,15 @@ function EnrollPanel({ sessionId, sessionTitle }: { sessionId: string; sessionTi
 
       {subTab === "csv" && !csvResult && (
         <div className="ep-csv">
-          <div className="ep-csv-info">Colonnes : <code>email</code> · <code>email,nom</code> · <code>email,prenom,nom</code> — séparateur <code>,</code> ou <code>;</code></div>
+          <div className="ep-csv-info-bar">
+            <div className="ep-csv-info">
+              Colonnes : <code>email</code> · <code>email,nom</code> · <code>email,prenom,nom</code> — séparateur <code>,</code> ou <code>;</code>
+              <br />Supporte jusqu&apos;à <strong>10 000 utilisateurs</strong> par import. Les utilisateurs inexistants sont créés automatiquement.
+            </div>
+            <a href="/api/admin/enroll-csv-template" download className="ep-csv-dl">
+              ⬇ Télécharger le modèle
+            </a>
+          </div>
           <div
             className={`ep-dropzone${csvDrag ? " drag" : ""}${csvFile ? " ok" : ""}`}
             onDragOver={e => { e.preventDefault(); setCsvDrag(true) }}
@@ -167,13 +175,32 @@ function EnrollPanel({ sessionId, sessionTitle }: { sessionId: string; sessionTi
             onDrop={e => { e.preventDefault(); setCsvDrag(false); const f = e.dataTransfer.files[0]; if (f) setCsvFile(f) }}
             onClick={() => document.getElementById("csv-input-mod")?.click()}>
             <input id="csv-input-mod" type="file" accept=".csv" style={{ display: "none" }} onChange={e => e.target.files?.[0] && setCsvFile(e.target.files[0])} />
-            {csvFile ? <span className="ep-fname">📄 {csvFile.name}</span> : <span className="ep-hint">⬆ Glisser un fichier CSV ou cliquer</span>}
+            {csvFile
+              ? <span className="ep-fname">📄 {csvFile.name}</span>
+              : (
+                <div className="ep-dropzone-content">
+                  <div className="ep-dropzone-icon">📂</div>
+                  <span className="ep-hint">Glisser un fichier CSV ici ou cliquer pour sélectionner</span>
+                  <span className="ep-hint-sub">Format accepté : .csv — séparateur , ou ;</span>
+                </div>
+              )
+            }
           </div>
-          {csvError && <div className="ep-csv-err">{csvError}</div>}
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 8 }}>
-            {csvFile && <button className="mod-btn mod-btn-outline" onClick={() => setCsvFile(null)} disabled={csvLoading}>Annuler</button>}
+          {csvError && <div className="ep-csv-err">⚠️ {csvError}</div>}
+          {csvLoading && (
+            <div className="ep-progress-wrap">
+              <div className="ep-progress-bar">
+                <div className="ep-progress-fill" />
+              </div>
+              <span className="ep-progress-label">Import en cours, veuillez patienter…</span>
+            </div>
+          )}
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 4 }}>
+            {csvFile && !csvLoading && (
+              <button className="mod-btn mod-btn-outline" onClick={() => setCsvFile(null)}>Annuler</button>
+            )}
             <button className="mod-btn mod-btn-primary" onClick={submitCsv} disabled={!csvFile || csvLoading}>
-              {csvLoading ? <><span className="ep-spinner" /> Import…</> : "Importer"}
+              {csvLoading ? <><span className="ep-spinner" /> Import en cours…</> : "Importer"}
             </button>
           </div>
         </div>
@@ -181,12 +208,15 @@ function EnrollPanel({ sessionId, sessionTitle }: { sessionId: string; sessionTi
 
       {subTab === "csv" && csvResult && (
         <div className="ep-csv">
+          <div className="ep-csv-success-banner">
+            ✅ Import terminé avec succès
+          </div>
           <div className="ep-csv-stats">
             {[
-              { v: csvResult.summary.total, l: "lus", c: "total" },
-              { v: csvResult.summary.enrolled, l: "enrôlés", c: "ok" },
-              { v: csvResult.summary.skipped, l: "déjà enrôlés", c: "skip" },
-              { v: csvResult.summary.notFound, l: "inconnus", c: "err" },
+              { v: csvResult.summary.total,    l: "lus",          c: "total" },
+              { v: csvResult.summary.created,  l: "créés",        c: "new"   },
+              { v: csvResult.summary.enrolled, l: "enrôlés",      c: "ok"    },
+              { v: csvResult.summary.skipped,  l: "déjà enrôlés", c: "skip"  },
             ].map(s => (
               <div key={s.l} className={`ep-stat ep-stat-${s.c}`}>
                 <span className="ep-sv">{s.v}</span>
@@ -194,13 +224,18 @@ function EnrollPanel({ sessionId, sessionTitle }: { sessionId: string; sessionTi
               </div>
             ))}
           </div>
-          {csvResult.notFound.length > 0 && (
-            <div className="ep-csv-detail">
-              <div className="ep-csv-dl-title">Non trouvés (pas encore connectés)</div>
-              <div className="ep-chips">{csvResult.notFound.map(e => <span key={e} className="ep-chip ep-chip-err">{e}</span>)}</div>
+          {csvResult.skipped.length > 0 && (
+            <div className="ep-csv-detail" style={{ marginTop: 8 }}>
+              <div className="ep-csv-dl-title" style={{ color: "#d97706" }}>
+                ℹ️ Déjà enrôlés ({csvResult.summary.skipped} au total)
+                {csvResult.summary.skipped > 100 && <span className="ep-csv-dl-note"> — affichage limité aux 100 premiers</span>}
+              </div>
+              <div className="ep-chips">{csvResult.skipped.map(e => <span key={e} className="ep-chip ep-chip-skip">{e}</span>)}</div>
             </div>
           )}
-          <button className="mod-btn mod-btn-outline" style={{ marginTop: 8 }} onClick={() => { setCsvResult(null); setCsvFile(null) }}>Nouvel import</button>
+          <button className="mod-btn mod-btn-outline" style={{ marginTop: 8 }} onClick={() => { setCsvResult(null); setCsvFile(null) }}>
+            ↩ Nouvel import
+          </button>
         </div>
       )}
 
@@ -219,8 +254,8 @@ function EnrollPanel({ sessionId, sessionTitle }: { sessionId: string; sessionTi
                 <span className="ep-uemail">{u.email}</span>
                 <span className="ep-date">Enrôlé le {new Date(u.enrolledAt).toLocaleDateString("fr-FR")}</span>
               </div>
-              <button className="mod-btn mod-btn-delete ep-sm" disabled={removing === u.id} onClick={() => unenroll(u.id)}>
-                {removing === u.id ? "…" : "Retirer"}
+              <button className="mod-btn mod-btn-delete ep-sm" disabled={removing === u.userId} onClick={() => unenroll(u.userId)}>
+                {removing === u.userId ? "…" : "Retirer"}
               </button>
             </div>
           ))
@@ -690,26 +725,40 @@ export default function ModeratorClient({ user }: { user: User }) {
         .ep-list-header span{font-size:0.78rem;font-weight:600;color:#6b7280;}
         .ep-sm{padding:5px 11px;font-size:0.76rem;}
         .ep-csv{padding:14px 20px;border-bottom:1px solid #f0f7ff;display:flex;flex-direction:column;gap:10px;}
-        .ep-csv-info{font-size:0.72rem;color:#9ca3af;line-height:1.5;}
+        .ep-csv-info-bar{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;}
+        .ep-csv-info{font-size:0.72rem;color:#9ca3af;line-height:1.6;}
         .ep-csv-info code{font-family:monospace;font-size:0.76rem;background:#e8f4ff;padding:1px 4px;border-radius:3px;color:#0065b1;}
-        .ep-dropzone{border:2px dashed #d1e4f5;border-radius:9px;padding:20px;text-align:center;cursor:pointer;transition:all .15s;}
+        .ep-csv-info strong{color:#374151;}
+        .ep-csv-dl{display:inline-flex;align-items:center;gap:5px;font-size:0.76rem;color:#0065b1;text-decoration:none;font-weight:600;white-space:nowrap;padding:5px 12px;border:1.5px solid #0065b1;border-radius:7px;transition:background .15s;flex-shrink:0;}
+        .ep-csv-dl:hover{background:#e8f4ff;}
+        .ep-dropzone{border:2px dashed #d1e4f5;border-radius:10px;padding:24px 20px;text-align:center;cursor:pointer;transition:all .15s;}
         .ep-dropzone:hover,.ep-dropzone.drag{border-color:#0065b1;background:#f0f7ff;}
         .ep-dropzone.ok{border-color:#2fb344;background:#f0fdf4;}
-        .ep-hint{font-size:0.82rem;color:#9ca3af;}
-        .ep-fname{font-size:0.82rem;color:#1a1a2e;font-weight:600;}
-        .ep-csv-err{font-size:0.78rem;color:#b91c1c;background:#fff0f0;border:1px solid #fecaca;border-radius:6px;padding:6px 10px;}
+        .ep-dropzone-content{display:flex;flex-direction:column;align-items:center;gap:6px;}
+        .ep-dropzone-icon{font-size:1.8rem;}
+        .ep-hint{font-size:0.82rem;color:#6b7280;font-weight:500;}
+        .ep-hint-sub{font-size:0.72rem;color:#9ca3af;}
+        .ep-fname{font-size:0.84rem;color:#1a1a2e;font-weight:600;}
+        .ep-csv-err{font-size:0.78rem;color:#b91c1c;background:#fff0f0;border:1px solid #fecaca;border-radius:6px;padding:8px 12px;}
+        .ep-progress-wrap{display:flex;flex-direction:column;gap:5px;}
+        .ep-progress-bar{width:100%;height:5px;background:#e8f4ff;border-radius:3px;overflow:hidden;}
+        .ep-progress-fill{height:100%;width:40%;background:#0065b1;border-radius:3px;animation:ep-progress 1.4s ease-in-out infinite;}
+        @keyframes ep-progress{0%{transform:translateX(-150%)}100%{transform:translateX(350%)}}
+        .ep-progress-label{font-size:0.72rem;color:#0065b1;font-weight:500;}
+        .ep-csv-success-banner{background:#f0fdf4;border:1px solid #bbf7d0;border-radius:7px;padding:8px 14px;font-size:0.82rem;font-weight:600;color:#2fb344;}
         .ep-csv-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;}
-        .ep-stat{display:flex;flex-direction:column;align-items:center;padding:10px 6px;border-radius:7px;gap:3px;}
-        .ep-sv{font-size:1.3rem;font-weight:700;}.ep-sl{font-size:0.68rem;font-weight:500;}
+        .ep-stat{display:flex;flex-direction:column;align-items:center;padding:12px 6px;border-radius:8px;gap:3px;}
+        .ep-sv{font-size:1.4rem;font-weight:700;}.ep-sl{font-size:0.68rem;font-weight:600;}
         .ep-stat-total{background:#f8fbff;}.ep-stat-total .ep-sv{color:#0065b1;}.ep-stat-total .ep-sl{color:#9ca3af;}
+        .ep-stat-new{background:#eff6ff;}.ep-stat-new .ep-sv{color:#3b82f6;}.ep-stat-new .ep-sl{color:#3b82f6;}
         .ep-stat-ok{background:#f0fdf4;}.ep-stat-ok .ep-sv{color:#2fb344;}.ep-stat-ok .ep-sl{color:#2fb344;}
         .ep-stat-skip{background:#fffbeb;}.ep-stat-skip .ep-sv{color:#d97706;}.ep-stat-skip .ep-sl{color:#d97706;}
-        .ep-stat-err{background:#fff0f0;}.ep-stat-err .ep-sv{color:#b91c1c;}.ep-stat-err .ep-sl{color:#b91c1c;}
         .ep-csv-detail{background:#f8fbff;border:1px solid #e8f4ff;border-radius:7px;padding:10px;}
         .ep-csv-dl-title{font-size:0.76rem;font-weight:700;color:#1a1a2e;margin-bottom:6px;}
-        .ep-chips{display:flex;flex-wrap:wrap;gap:5px;}
+        .ep-csv-dl-note{font-size:0.7rem;color:#9ca3af;font-weight:400;}
+        .ep-chips{display:flex;flex-wrap:wrap;gap:5px;max-height:120px;overflow-y:auto;}
         .ep-chip{font-size:0.7rem;padding:2px 8px;border-radius:20px;font-weight:500;}
-        .ep-chip-err{background:#fee2e2;color:#b91c1c;}
+        .ep-chip-skip{background:#fffbeb;color:#d97706;}
         .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:100;}
         .modal{background:white;border-radius:16px;width:100%;max-width:480px;box-shadow:0 24px 64px rgba(0,0,0,.2);}
         .modal-header{display:flex;align-items:center;justify-content:space-between;padding:20px 24px;border-bottom:1px solid #e2e8f0;}
