@@ -1,19 +1,16 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
-import Image from "next/image"
 import { signOut } from "next-auth/react"
 
 type User = { id: string; name: string; email: string; role: string; sessionCount: number; createdAt: string }
-type Room  = { id: string; title: string; roomName: string; status: string; createdAt: string; creator: { name: string; email: string }; enrollments: number; recordings: number }
-type Recording = {
-  id: string; filename: string; s3Key: string; duration: number | null
-  size: number | null; createdAt: string
-  session: { id: string; title: string; roomName: string; creator: { name: string; email: string } }
-}
+type Room = { id: string; title: string; roomName: string; status: string; createdAt: string; creator: { name: string; email: string }; enrollments: number; recordings: number }
+type Recording = { id: string; filename: string; s3Key: string; duration: number | null; size: number | null; createdAt: string; session: { id: string; title: string; roomName: string; creator: { name: string; email: string } } }
 type EnrolledUser = { id: string; userId: string; name: string; email: string; role: string; enrolledAt: string }
-type SearchUser   = { id: string; name: string; email: string; role: string }
+type SearchUser = { id: string; name: string; email: string; role: string }
 type ImportResult = { summary: { total: number; created: number; enrolled: number; skipped: number }; skipped: string[] }
+
+const PAGE_SIZE = 50
 
 function formatSize(b: number) {
   if (!b) return "—"
@@ -24,30 +21,67 @@ function formatSize(b: number) {
 function formatDur(s: number) {
   if (!s) return "—"
   const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sc = s % 60
-  return h > 0 ? `${h}h${m.toString().padStart(2,"0")}m` : `${m}:${sc.toString().padStart(2,"0")}`
+  return h > 0 ? `${h}h${m.toString().padStart(2, "0")}m` : `${m}:${sc.toString().padStart(2, "0")}`
 }
-const ROLE_LABELS: Record<string, string> = { ADMIN:"Administrateur", MODERATOR:"Modérateur", VIEWER:"Spectateur" }
+const ROLE_LABELS: Record<string, string> = { ADMIN: "Administrateur", MODERATOR: "Modérateur", VIEWER: "Spectateur" }
+
+function initials(name: string) {
+  return name.split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2)
+}
+
+function Avatar({ name, color = "#0065b1" }: { name: string; color?: string }) {
+  const bg = color
+  return (
+    <div style={{ width: 28, height: 28, borderRadius: "50%", background: bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 500, color: "white", flexShrink: 0 }}>
+      {initials(name || "?")}
+    </div>
+  )
+}
+
+function Pagination({ total, page, onPage }: { total: number; page: number; onPage: (p: number) => void }) {
+  const pages = Math.ceil(total / PAGE_SIZE)
+  if (pages <= 1) return null
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 16px", borderTop: "1px solid #f0f7ff", background: "#f8fbff" }}>
+      <span style={{ fontSize: 14, color: "#6b7280" }}>
+        {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, total)} sur {total}
+      </span>
+      <div style={{ display: "flex", gap: 4 }}>
+        <button onClick={() => onPage(page - 1)} disabled={page === 1} style={{ padding: "4px 10px", border: "1px solid #e2e8f0", borderRadius: 6, background: "white", cursor: page === 1 ? "not-allowed" : "pointer", opacity: page === 1 ? .4 : 1, fontSize: 14 }}>←</button>
+        {Array.from({ length: pages }, (_, i) => i + 1).filter(p => p === 1 || p === pages || Math.abs(p - page) <= 1).map((p, i, arr) => (
+          <>
+            {i > 0 && arr[i - 1] !== p - 1 && <span key={`e${p}`} style={{ padding: "4px 6px", fontSize: 14, color: "#9ca3af" }}>…</span>}
+            <button key={p} onClick={() => onPage(p)} style={{ padding: "4px 10px", border: "1px solid", borderColor: p === page ? "#0065b1" : "#e2e8f0", borderRadius: 6, background: p === page ? "#0065b1" : "white", color: p === page ? "white" : "#374151", cursor: "pointer", fontSize: 14, fontWeight: p === page ? 600 : 400 }}>{p}</button>
+          </>
+        ))}
+        <button onClick={() => onPage(page + 1)} disabled={page === pages} style={{ padding: "4px 10px", border: "1px solid #e2e8f0", borderRadius: 6, background: "white", cursor: page === pages ? "not-allowed" : "pointer", opacity: page === pages ? .4 : 1, fontSize: 14 }}>→</button>
+      </div>
+    </div>
+  )
+}
 
 // ── EnrollPanel ──
 function EnrollPanel({ sessionId, sessionTitle }: { sessionId: string; sessionTitle: string }) {
-  const [subTab, setSubTab]       = useState<"manual"|"csv">("manual")
-  const [enrolled, setEnrolled]   = useState<EnrolledUser[]>([])
-  const [query, setQuery]         = useState("")
-  const [results, setResults]     = useState<SearchUser[]>([])
+  const [subTab, setSubTab] = useState<"manual" | "csv">("manual")
+  const [enrolled, setEnrolled] = useState<EnrolledUser[]>([])
+  const [query, setQuery] = useState("")
+  const [results, setResults] = useState<SearchUser[]>([])
   const [searching, setSearching] = useState(false)
-  const [adding, setAdding]       = useState<string|null>(null)
-  const [removing, setRemoving]   = useState<string|null>(null)
+  const [adding, setAdding] = useState<string | null>(null)
+  const [removing, setRemoving] = useState<string | null>(null)
   const [loadingList, setLoadingList] = useState(true)
-  const [csvFile, setCsvFile]     = useState<File|null>(null)
-  const [csvDrag, setCsvDrag]     = useState(false)
+  const [enrollPage, setEnrollPage] = useState(1)
+  const [csvFile, setCsvFile] = useState<File | null>(null)
+  const [csvDrag, setCsvDrag] = useState(false)
   const [csvLoading, setCsvLoading] = useState(false)
-  const [csvResult, setCsvResult] = useState<ImportResult|null>(null)
-  const [csvError, setCsvError]   = useState<string|null>(null)
+  const [csvResult, setCsvResult] = useState<ImportResult | null>(null)
+  const [csvError, setCsvError] = useState<string | null>(null)
 
   const fetchEnrolled = useCallback(async () => {
     setLoadingList(true)
     const d = await (await fetch(`/api/admin/rooms/${sessionId}/enroll`)).json()
     setEnrolled(d.enrollments ?? [])
+    setEnrollPage(1)
     setLoadingList(false)
   }, [sessionId])
 
@@ -67,20 +101,14 @@ function EnrollPanel({ sessionId, sessionTitle }: { sessionId: string; sessionTi
 
   const enroll = async (userId: string) => {
     setAdding(userId)
-    await fetch(`/api/admin/rooms/${sessionId}/enroll`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId }),
-    })
+    await fetch(`/api/admin/rooms/${sessionId}/enroll`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId }) })
     setQuery(""); setResults([])
     await fetchEnrolled(); setAdding(null)
   }
 
   const unenroll = async (userId: string) => {
     setRemoving(userId)
-    await fetch(`/api/admin/rooms/${sessionId}/enroll`, {
-      method: "DELETE", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId }),
-    })
+    await fetch(`/api/admin/rooms/${sessionId}/enroll`, { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId }) })
     await fetchEnrolled(); setRemoving(null)
   }
 
@@ -89,7 +117,7 @@ function EnrollPanel({ sessionId, sessionTitle }: { sessionId: string; sessionTi
     setCsvLoading(true); setCsvError(null); setCsvResult(null)
     const fd = new FormData(); fd.append("file", csvFile)
     try {
-      const res  = await fetch(`/api/admin/rooms/${sessionId}/enroll-csv`, { method: "POST", body: fd })
+      const res = await fetch(`/api/admin/rooms/${sessionId}/enroll-csv`, { method: "POST", body: fd })
       const data = await res.json()
       if (!res.ok) setCsvError(data.error ?? "Erreur import")
       else { setCsvResult(data); if (data.summary.enrolled > 0) fetchEnrolled() }
@@ -97,28 +125,38 @@ function EnrollPanel({ sessionId, sessionTitle }: { sessionId: string; sessionTi
     setCsvLoading(false)
   }
 
+  const pagedEnrolled = enrolled.slice((enrollPage - 1) * PAGE_SIZE, enrollPage * PAGE_SIZE)
+
   return (
-    <div className="ep-root">
-      <div className="ep-header">
-        <span className="ep-title">{sessionTitle}</span>
-        <div className="ep-tabs">
-          <button className={`ep-tab${subTab==="manual"?" active":""}`} onClick={() => setSubTab("manual")}>Individuel</button>
-          <button className={`ep-tab${subTab==="csv"?" active":""}`} onClick={() => setSubTab("csv")}>Import CSV</button>
-        </div>
+    <div style={{ display: "flex", flexDirection: "column" }}>
+      {/* Tabs */}
+      <div style={{ display: "flex", borderBottom: "1px solid #f0f7ff", padding: "0 16px", gap: 0 }}>
+        {(["manual", "csv"] as const).map(t => (
+          <button key={t} onClick={() => setSubTab(t)} style={{ padding: "10px 16px", background: "none", border: "none", borderBottom: `2px solid ${subTab === t ? "#0065b1" : "transparent"}`, color: subTab === t ? "#0065b1" : "#9ca3af", fontSize: 14, fontWeight: subTab === t ? 600 : 400, cursor: "pointer", fontFamily: "inherit" }}>
+            {t === "manual" ? "Individuel" : "Import CSV"}
+          </button>
+        ))}
       </div>
 
       {subTab === "manual" && (
         <>
-          <div className="ep-search">
-            <input className="ep-input" placeholder="Rechercher un utilisateur…" value={query} onChange={e => setQuery(e.target.value)} />
-            {searching && <span className="ep-spinner" />}
+          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", borderBottom: "1px solid #f0f7ff" }}>
+            <input placeholder="Rechercher un utilisateur…" value={query} onChange={e => setQuery(e.target.value)}
+              style={{ flex: 1, padding: "6px 10px", border: "1px solid #e2e8f0", borderRadius: 7, fontSize: 14, fontFamily: "inherit", outline: "none", color: "#1a1a2e", background: "#f8fbff" }} />
+            {searching && <span style={{ width: 13, height: 13, border: "2px solid #d1e4f5", borderTopColor: "#0065b1", borderRadius: "50%", animation: "adm-spin .7s linear infinite", display: "inline-block", flexShrink: 0 }} />}
           </div>
           {results.length > 0 && (
-            <div className="ep-results">
+            <div style={{ background: "#f8fbff", borderBottom: "1px solid #f0f7ff" }}>
               {results.map(u => (
-                <div key={u.id} className="ep-row">
-                  <div className="ep-uinfo"><span className="ep-uname">{u.name}</span><span className="ep-uemail">{u.email}</span></div>
-                  <button className="adm-btn adm-btn-primary ep-sm" disabled={adding===u.id} onClick={() => enroll(u.id)}>{adding===u.id?"…":"+ Ajouter"}</button>
+                <div key={u.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 14px", borderBottom: "1px solid #f0f7ff" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <Avatar name={u.name} color="#0065b1" />
+                    <div><div style={{ fontSize: 14, fontWeight: 500, color: "#1a1a2e" }}>{u.name}</div><div style={{ fontSize: 13, color: "#9ca3af" }}>{u.email}</div></div>
+                  </div>
+                  <button disabled={adding === u.id} onClick={() => enroll(u.id)}
+                    style={{ padding: "4px 12px", background: "#0065b1", color: "white", border: "none", borderRadius: 6, fontSize: 14, cursor: "pointer", fontFamily: "inherit", opacity: adding === u.id ? .5 : 1 }}>
+                    {adding === u.id ? "…" : "+ Ajouter"}
+                  </button>
                 </div>
               ))}
             </div>
@@ -127,423 +165,424 @@ function EnrollPanel({ sessionId, sessionTitle }: { sessionId: string; sessionTi
       )}
 
       {subTab === "csv" && !csvResult && (
-        <div className="ep-csv">
-          <div className="ep-csv-info-bar">
-            <div className="ep-csv-info">
-              Colonnes : <code>email</code> · <code>email,nom</code> · <code>email,prenom,nom</code> — séparateur <code>,</code> ou <code>;</code>
-              <br />Supporte jusqu&apos;à <strong>10 000 utilisateurs</strong> par import. Les utilisateurs inexistants sont créés automatiquement.
+        <div style={{ padding: "12px 14px", borderBottom: "1px solid #f0f7ff", display: "flex", flexDirection: "column", gap: 10 }}>
+          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+            <div style={{ fontSize: 13, color: "#9ca3af", lineHeight: 1.6 }}>
+              Colonnes : <code style={{ background: "#e8f4ff", color: "#0065b1", padding: "1px 4px", borderRadius: 3 }}>email</code> · <code style={{ background: "#e8f4ff", color: "#0065b1", padding: "1px 4px", borderRadius: 3 }}>email,prenom,nom</code><br />
+              Jusqu&apos;à <strong style={{ color: "#374151" }}>10 000 utilisateurs</strong>. Créés automatiquement si inexistants.
             </div>
-            <a href="/api/admin/enroll-csv-template" download className="ep-csv-dl">
-              ⬇ Télécharger le modèle
-            </a>
+            <a href="/api/admin/enroll-csv-template" download style={{ fontSize: 14, color: "#0065b1", textDecoration: "none", fontWeight: 600, padding: "4px 10px", border: "1px solid #0065b1", borderRadius: 6, whiteSpace: "nowrap" }}>⬇ Modèle CSV</a>
           </div>
-          <div className={`ep-dropzone${csvDrag?" drag":""}${csvFile?" ok":""}`}
+          <div
+            onClick={() => document.getElementById("csv-input-adm")?.click()}
             onDragOver={e => { e.preventDefault(); setCsvDrag(true) }}
             onDragLeave={() => setCsvDrag(false)}
-            onDrop={e => { e.preventDefault(); setCsvDrag(false); const f=e.dataTransfer.files[0]; if(f) setCsvFile(f) }}
-            onClick={() => document.getElementById("csv-input")?.click()}>
-            <input id="csv-input" type="file" accept=".csv" style={{ display:"none" }} onChange={e => e.target.files?.[0] && setCsvFile(e.target.files[0])} />
-            {csvFile
-              ? <span className="ep-fname">📄 {csvFile.name}</span>
-              : (
-                <div className="ep-dropzone-content">
-                  <div className="ep-dropzone-icon">📂</div>
-                  <span className="ep-hint">Glisser un fichier CSV ici ou cliquer pour sélectionner</span>
-                  <span className="ep-hint-sub">Format accepté : .csv — séparateur , ou ;</span>
-                </div>
-              )
-            }
+            onDrop={e => { e.preventDefault(); setCsvDrag(false); const f = e.dataTransfer.files[0]; if (f) setCsvFile(f) }}
+            style={{ border: `2px dashed ${csvDrag ? "#0065b1" : csvFile ? "#2fb344" : "#d1e4f5"}`, background: csvFile ? "#f0fdf4" : csvDrag ? "#f0f7ff" : "white", borderRadius: 8, padding: "20px", textAlign: "center", cursor: "pointer" }}>
+            <input id="csv-input-adm" type="file" accept=".csv" style={{ display: "none" }} onChange={e => e.target.files?.[0] && setCsvFile(e.target.files[0])} />
+            {csvFile ? <span style={{ fontSize: 14, fontWeight: 600, color: "#1a1a2e" }}>📄 {csvFile.name}</span> : <span style={{ fontSize: 14, color: "#9ca3af" }}>Glisser un fichier CSV ici ou cliquer</span>}
           </div>
-          {csvError && <div className="ep-csv-err">⚠️ {csvError}</div>}
-          {csvLoading && (
-            <div className="ep-progress-wrap">
-              <div className="ep-progress-bar"><div className="ep-progress-fill" /></div>
-              <span className="ep-progress-label">Import en cours, veuillez patienter…</span>
-            </div>
-          )}
-          <div style={{ display:"flex", justifyContent:"flex-end", gap:8, marginTop:8 }}>
-            {csvFile && !csvLoading && <button className="adm-btn adm-btn-outline" onClick={() => setCsvFile(null)}>Annuler</button>}
-            <button className="adm-btn adm-btn-primary" onClick={submitCsv} disabled={!csvFile||csvLoading}>
-              {csvLoading ? <><span className="ep-spinner" /> Import en cours…</> : "Importer"}
+          {csvError && <div style={{ fontSize: 13, color: "#b91c1c", background: "#fff0f0", border: "1px solid #fecaca", borderRadius: 6, padding: "6px 10px" }}>⚠️ {csvError}</div>}
+          {csvLoading && <div style={{ height: 4, background: "#e8f4ff", borderRadius: 2, overflow: "hidden" }}><div style={{ height: "100%", width: "40%", background: "#0065b1", borderRadius: 2, animation: "ep-progress 1.4s ease-in-out infinite" }} /></div>}
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+            {csvFile && !csvLoading && <button onClick={() => setCsvFile(null)} style={{ padding: "5px 12px", background: "white", border: "1px solid #e2e8f0", borderRadius: 6, fontSize: 14, cursor: "pointer", fontFamily: "inherit" }}>Annuler</button>}
+            <button onClick={submitCsv} disabled={!csvFile || csvLoading} style={{ padding: "5px 14px", background: "#0065b1", color: "white", border: "none", borderRadius: 6, fontSize: 14, cursor: "pointer", fontFamily: "inherit", opacity: !csvFile || csvLoading ? .5 : 1 }}>
+              {csvLoading ? "Import en cours…" : "Importer"}
             </button>
           </div>
         </div>
       )}
 
       {subTab === "csv" && csvResult && (
-        <div className="ep-csv">
-          <div className="ep-csv-success-banner">✅ Import terminé avec succès</div>
-          <div className="ep-csv-stats">
-            {[
-              { v: csvResult.summary.total,    l: "lus",          c: "total" },
-              { v: csvResult.summary.created,  l: "créés",        c: "new"   },
-              { v: csvResult.summary.enrolled, l: "enrôlés",      c: "ok"    },
-              { v: csvResult.summary.skipped,  l: "déjà enrôlés", c: "skip"  },
-            ].map(s => (
-              <div key={s.l} className={`ep-stat ep-stat-${s.c}`}>
-                <span className="ep-sv">{s.v}</span>
-                <span className="ep-sl">{s.l}</span>
+        <div style={{ padding: "12px 14px", borderBottom: "1px solid #f0f7ff", display: "flex", flexDirection: "column", gap: 10 }}>
+          <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 7, padding: "8px 12px", fontSize: 14, fontWeight: 600, color: "#2fb344" }}>✅ Import terminé</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 8 }}>
+            {[{ v: csvResult.summary.total, l: "lus", bg: "#f8fbff", c: "#0065b1" }, { v: csvResult.summary.created, l: "créés", bg: "#eff6ff", c: "#3b82f6" }, { v: csvResult.summary.enrolled, l: "enrôlés", bg: "#f0fdf4", c: "#2fb344" }, { v: csvResult.summary.skipped, l: "déjà enrôlés", bg: "#fffbeb", c: "#d97706" }].map(s => (
+              <div key={s.l} style={{ background: s.bg, borderRadius: 7, padding: "10px 6px", display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
+                <span style={{ fontSize: 20, fontWeight: 600, color: s.c }}>{s.v}</span>
+                <span style={{ fontSize: 14, fontWeight: 600, color: s.c }}>{s.l}</span>
               </div>
             ))}
           </div>
-          {csvResult.skipped.length > 0 && (
-            <div className="ep-csv-detail" style={{ marginTop:8 }}>
-              <div className="ep-csv-dl-title" style={{ color:"#d97706" }}>
-                ℹ️ Déjà enrôlés ({csvResult.summary.skipped} au total)
-                {csvResult.summary.skipped > 100 && <span className="ep-csv-dl-note"> — affichage limité aux 100 premiers</span>}
-              </div>
-              <div className="ep-chips">{csvResult.skipped.map(e => <span key={e} className="ep-chip ep-chip-skip">{e}</span>)}</div>
-            </div>
-          )}
-          <button className="adm-btn adm-btn-outline" style={{ marginTop:8 }} onClick={() => { setCsvResult(null); setCsvFile(null) }}>
-            ↩ Nouvel import
-          </button>
+          <button onClick={() => { setCsvResult(null); setCsvFile(null) }} style={{ padding: "5px 12px", background: "white", border: "1px solid #e2e8f0", borderRadius: 6, fontSize: 14, cursor: "pointer", fontFamily: "inherit", alignSelf: "flex-start" }}>↩ Nouvel import</button>
         </div>
       )}
 
-      <div className="ep-list-header">
-        <span>Utilisateurs enrôlés</span>
-        <span className="adm-count">{enrolled.length}</span>
+      {/* Liste enrôlés */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 14px", background: "#f8fbff", borderBottom: "1px solid #f0f7ff", borderTop: "1px solid #f0f7ff" }}>
+        <span style={{ fontSize: 13, fontWeight: 600, color: "#6b7280" }}>Utilisateurs enrôlés</span>
+        <span style={{ background: "#e8f4ff", color: "#0065b1", fontSize: 14, fontWeight: 700, padding: "2px 7px", borderRadius: 10 }}>{enrolled.length}</span>
       </div>
-      {loadingList ? <div className="adm-loading"><span className="adm-spinner" /> Chargement…</div>
-      : enrolled.length === 0 ? <div className="adm-empty">Aucun utilisateur enrôlé</div>
-      : enrolled.map(u => (
-        <div key={u.id} className="ep-row">
-          <div className="ep-uinfo">
-            <span className="ep-uname">{u.name}</span>
-            <span className="ep-uemail">{u.email}</span>
-            <span className="ep-date">Enrôlé le {new Date(u.enrolledAt).toLocaleDateString("fr-FR")}</span>
-          </div>
-          <button className="adm-btn adm-btn-delete ep-sm" disabled={removing===u.userId} onClick={() => unenroll(u.userId)}>{removing===u.userId?"…":"Retirer"}</button>
-        </div>
-      ))}
-
-      <style>{`
-        .ep-root{display:flex;flex-direction:column;}
-        .ep-header{display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:1px solid #f0f7ff;gap:12px;flex-wrap:wrap;}
-        .ep-title{font-size:0.9rem;font-weight:700;color:#1a1a2e;}
-        .ep-tabs{display:flex;gap:4px;}
-        .ep-tab{padding:5px 14px;border:1.5px solid #d1e4f5;background:white;border-radius:20px;font-size:0.78rem;font-weight:600;color:#6b7280;cursor:pointer;font-family:inherit;transition:all .15s;}
-        .ep-tab.active{background:#0065b1;border-color:#0065b1;color:#fff;}
-        .ep-search{display:flex;align-items:center;gap:8px;padding:12px 20px;border-bottom:1px solid #f0f7ff;}
-        .ep-input{flex:1;padding:7px 11px;border:1.5px solid #d1e4f5;border-radius:7px;font-size:0.83rem;font-family:inherit;outline:none;color:#1a1a2e;}
-        .ep-input:focus{border-color:#0065b1;}
-        .ep-spinner{width:14px;height:14px;border:2px solid #d1e4f5;border-top-color:#0065b1;border-radius:50%;animation:adm-spin .7s linear infinite;flex-shrink:0;display:inline-block;}
-        .ep-results{background:#f8fbff;border-bottom:1px solid #f0f7ff;}
-        .ep-row{display:flex;align-items:center;justify-content:space-between;padding:10px 20px;border-bottom:1px solid #f0f7ff;}
-        .ep-row:last-child{border-bottom:none;}
-        .ep-uinfo{display:flex;flex-direction:column;gap:2px;}
-        .ep-uname{font-size:0.84rem;font-weight:600;color:#1a1a2e;}
-        .ep-uemail{font-size:0.74rem;color:#9ca3af;}
-        .ep-date{font-size:0.7rem;color:#c4cdd9;}
-        .ep-list-header{display:flex;align-items:center;gap:8px;padding:10px 20px;background:#f8fbff;border-bottom:1px solid #f0f7ff;border-top:1px solid #f0f7ff;}
-        .ep-list-header span{font-size:0.78rem;font-weight:600;color:#6b7280;}
-        .ep-sm{padding:5px 11px;font-size:0.76rem;}
-        .ep-csv{padding:14px 20px;border-bottom:1px solid #f0f7ff;display:flex;flex-direction:column;gap:10px;}
-        .ep-csv-info-bar{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;}
-        .ep-csv-info{font-size:0.72rem;color:#9ca3af;line-height:1.6;}
-        .ep-csv-info code{font-family:monospace;font-size:0.76rem;background:#e8f4ff;padding:1px 4px;border-radius:3px;color:#0065b1;}
-        .ep-csv-info strong{color:#374151;}
-        .ep-csv-dl{display:inline-flex;align-items:center;gap:5px;font-size:0.76rem;color:#0065b1;text-decoration:none;font-weight:600;white-space:nowrap;padding:5px 12px;border:1.5px solid #0065b1;border-radius:7px;transition:background .15s;flex-shrink:0;}
-        .ep-csv-dl:hover{background:#e8f4ff;}
-        .ep-dropzone{border:2px dashed #d1e4f5;border-radius:10px;padding:24px 20px;text-align:center;cursor:pointer;transition:all .15s;}
-        .ep-dropzone:hover,.ep-dropzone.drag{border-color:#0065b1;background:#f0f7ff;}
-        .ep-dropzone.ok{border-color:#2fb344;background:#f0fdf4;}
-        .ep-dropzone-content{display:flex;flex-direction:column;align-items:center;gap:6px;}
-        .ep-dropzone-icon{font-size:1.8rem;}
-        .ep-hint{font-size:0.82rem;color:#6b7280;font-weight:500;}
-        .ep-hint-sub{font-size:0.72rem;color:#9ca3af;}
-        .ep-fname{font-size:0.84rem;color:#1a1a2e;font-weight:600;}
-        .ep-csv-err{font-size:0.78rem;color:#b91c1c;background:#fff0f0;border:1px solid #fecaca;border-radius:6px;padding:8px 12px;}
-        .ep-progress-wrap{display:flex;flex-direction:column;gap:5px;}
-        .ep-progress-bar{width:100%;height:5px;background:#e8f4ff;border-radius:3px;overflow:hidden;}
-        .ep-progress-fill{height:100%;width:40%;background:#0065b1;border-radius:3px;animation:ep-progress 1.4s ease-in-out infinite;}
-        @keyframes ep-progress{0%{transform:translateX(-150%)}100%{transform:translateX(350%)}}
-        .ep-progress-label{font-size:0.72rem;color:#0065b1;font-weight:500;}
-        .ep-csv-success-banner{background:#f0fdf4;border:1px solid #bbf7d0;border-radius:7px;padding:8px 14px;font-size:0.82rem;font-weight:600;color:#2fb344;}
-        .ep-csv-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;}
-        .ep-stat{display:flex;flex-direction:column;align-items:center;padding:12px 6px;border-radius:8px;gap:3px;}
-        .ep-sv{font-size:1.4rem;font-weight:700;}.ep-sl{font-size:0.68rem;font-weight:600;}
-        .ep-stat-total{background:#f8fbff;}.ep-stat-total .ep-sv{color:#0065b1;}.ep-stat-total .ep-sl{color:#9ca3af;}
-        .ep-stat-new{background:#eff6ff;}.ep-stat-new .ep-sv{color:#3b82f6;}.ep-stat-new .ep-sl{color:#3b82f6;}
-        .ep-stat-ok{background:#f0fdf4;}.ep-stat-ok .ep-sv{color:#2fb344;}.ep-stat-ok .ep-sl{color:#2fb344;}
-        .ep-stat-skip{background:#fffbeb;}.ep-stat-skip .ep-sv{color:#d97706;}.ep-stat-skip .ep-sl{color:#d97706;}
-        .ep-csv-detail{background:#f8fbff;border:1px solid #e8f4ff;border-radius:7px;padding:10px;}
-        .ep-csv-dl-title{font-size:0.76rem;font-weight:700;color:#1a1a2e;margin-bottom:6px;}
-        .ep-csv-dl-note{font-size:0.7rem;color:#9ca3af;font-weight:400;}
-        .ep-chips{display:flex;flex-wrap:wrap;gap:5px;max-height:120px;overflow-y:auto;}
-        .ep-chip{font-size:0.7rem;padding:2px 8px;border-radius:20px;font-weight:500;}
-        .ep-chip-skip{background:#fffbeb;color:#d97706;}
-      `}</style>
+      {loadingList
+        ? <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "20px 14px", color: "#9ca3af", fontSize: 14 }}><span style={{ width: 13, height: 13, border: "2px solid #e2e8f0", borderTopColor: "#0065b1", borderRadius: "50%", animation: "adm-spin .7s linear infinite", display: "inline-block" }} /> Chargement…</div>
+        : enrolled.length === 0
+          ? <div style={{ padding: "20px 14px", textAlign: "center", color: "#9ca3af", fontSize: 14 }}>Aucun utilisateur enrôlé</div>
+          : pagedEnrolled.map(u => (
+            <div key={u.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "9px 14px", borderBottom: "1px solid #f0f7ff" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <Avatar name={u.name} color="#0065b1" />
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 500, color: "#1a1a2e" }}>{u.name}</div>
+                  <div style={{ fontSize: 13, color: "#9ca3af" }}>{u.email}</div>
+                  <div style={{ fontSize: 14, color: "#c4cdd9" }}>Enrôlé le {new Date(u.enrolledAt).toLocaleDateString("fr-FR")}</div>
+                </div>
+              </div>
+              <button disabled={removing === u.userId} onClick={() => unenroll(u.userId)}
+                style={{ padding: "3px 10px", background: "white", color: "#e53e3e", border: "1px solid #e53e3e", borderRadius: 6, fontSize: 14, cursor: "pointer", fontFamily: "inherit", opacity: removing === u.userId ? .5 : 1 }}>
+                {removing === u.userId ? "…" : "Retirer"}
+              </button>
+            </div>
+          ))
+      }
+      <Pagination total={enrolled.length} page={enrollPage} onPage={setEnrollPage} />
     </div>
   )
 }
 
 // ── Page principale ──
-export default function AdminClient({ user }: { user: { name?: string|null; email?: string|null; role: string } }) {
-  const [tab, setTab]             = useState<"users"|"rooms"|"recordings">("rooms")
-  const [users, setUsers]         = useState<User[]>([])
-  const [rooms, setRooms]         = useState<Room[]>([])
+export default function AdminClient({ user }: { user: { name?: string | null; email?: string | null; role: string } }) {
+  const [nav, setNav] = useState<"rooms" | "users" | "recordings">("rooms")
+  const [users, setUsers] = useState<User[]>([])
+  const [rooms, setRooms] = useState<Room[]>([])
   const [recordings, setRecordings] = useState<Recording[]>([])
-  const [loading, setLoading]     = useState(false)
-  const [updatingRole, setUpdatingRole] = useState<string|null>(null)
-  const [deletingRec, setDeletingRec]   = useState<string|null>(null)
-  const [playingKey, setPlayingKey]     = useState<string|null>(null)
-  const [selectedRoom, setSelectedRoom] = useState<Room|null>(null)
+  const [loading, setLoading] = useState(false)
+  const [updatingRole, setUpdatingRole] = useState<string | null>(null)
+  const [deletingRec, setDeletingRec] = useState<string | null>(null)
+  const [playingKey, setPlayingKey] = useState<string | null>(null)
+  const [selectedRoom, setSelectedRoom] = useState<Room | null>(null)
+  const [userPage, setUserPage] = useState(1)
+  const [recPage, setRecPage] = useState(1)
+  const [userSearch, setUserSearch] = useState("")
 
-  const fetchUsers      = useCallback(async () => { setLoading(true); const d = await (await fetch("/api/admin/users")).json(); setUsers(d.users??[]); setLoading(false) }, [])
-  const fetchRooms      = useCallback(async () => { setLoading(true); const d = await (await fetch("/api/admin/rooms")).json(); setRooms(d.rooms??[]); setLoading(false) }, [])
-  const fetchRecordings = useCallback(async () => { setLoading(true); const d = await (await fetch("/api/recordings/me")).json(); setRecordings(d.recordings??[]); setLoading(false) }, [])
+  const fetchUsers = useCallback(async () => { setLoading(true); const d = await (await fetch("/api/admin/users")).json(); setUsers(d.users ?? []); setUserPage(1); setLoading(false) }, [])
+  const fetchRooms = useCallback(async () => { setLoading(true); const d = await (await fetch("/api/admin/rooms")).json(); setRooms(d.rooms ?? []); setLoading(false) }, [])
+  const fetchRecordings = useCallback(async () => { setLoading(true); const d = await (await fetch("/api/recordings/me")).json(); setRecordings(d.recordings ?? []); setRecPage(1); setLoading(false) }, [])
 
   useEffect(() => {
-    if (tab === "users")      fetchUsers()
-    if (tab === "rooms")      fetchRooms()
-    if (tab === "recordings") fetchRecordings()
-  }, [tab, fetchUsers, fetchRooms, fetchRecordings])
+    if (nav === "users") fetchUsers()
+    if (nav === "rooms") fetchRooms()
+    if (nav === "recordings") fetchRecordings()
+  }, [nav, fetchUsers, fetchRooms, fetchRecordings])
 
   const changeRole = async (userId: string, role: string) => {
     setUpdatingRole(userId)
-    await fetch("/api/admin/users", { method:"PATCH", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ userId, role }) })
+    await fetch("/api/admin/users", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId, role }) })
     await fetchUsers(); setUpdatingRole(null)
   }
 
   const deleteRecording = async (id: string, filename: string) => {
     if (!confirm(`Supprimer "${filename}" ?`)) return
     setDeletingRec(id)
-    await fetch("/api/admin/recordings", { method:"DELETE", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ id, deleteFromS3: true }) })
+    await fetch("/api/admin/recordings", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, deleteFromS3: true }) })
     await fetchRecordings(); setDeletingRec(null)
   }
 
+  const filteredUsers = users.filter(u =>
+    !userSearch || u.name.toLowerCase().includes(userSearch.toLowerCase()) || u.email.toLowerCase().includes(userSearch.toLowerCase())
+  )
+  const pagedUsers = filteredUsers.slice((userPage - 1) * PAGE_SIZE, userPage * PAGE_SIZE)
+  const pagedRecs = recordings.slice((recPage - 1) * PAGE_SIZE, recPage * PAGE_SIZE)
+
+  const userName = user.name ?? user.email ?? "Admin"
+
+  const navItems = [
+    { key: "rooms", label: "Salles", count: rooms.length, icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 10l4.553-2.069A1 1 0 0121 8.87v6.259a1 1 0 01-1.447.894L15 14"/><rect x="3" y="6" width="12" height="12" rx="2"/></svg> },
+    { key: "recordings", label: "Enregistrements", count: recordings.length, icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M10 8l6 4-6 4V8z"/></svg> },
+    ...(user.role === "ADMIN" ? [{ key: "users", label: "Utilisateurs", count: users.length, icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg> }] : []),
+  ]
+
   return (
-    <div className="adm-root">
-      <header className="adm-header">
-        <a href="/" className="adm-logo-link">
-          <Image src="/logo-unchk.png" alt="UN-CHK" width={110} height={44} style={{ objectFit:"contain" }} priority />
-        </a>
-        <div className="adm-header-right">
-          <span className="adm-username">{user.name ?? user.email}</span>
-          <a href="/" className="adm-btn adm-btn-outline">← Tableau de bord</a>
-          <button className="adm-btn adm-btn-danger" onClick={() => signOut({ callbackUrl:"/" })}>Déconnexion</button>
+    <div style={{ display: "flex", height: "100vh", fontFamily: "'Google Sans','Segoe UI',system-ui,sans-serif", color: "#1a1a2e", background: "#f8fafd" }}>
+
+      {/* ── SIDEBAR ── */}
+      <div style={{ width: 210, flexShrink: 0, background: "white", borderRight: "1px solid #e2e8f0", display: "flex", flexDirection: "column" }}>
+        {/* Logo */}
+        <div style={{ padding: "16px 14px 12px", borderBottom: "1px solid #f0f7ff", display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{ width: 30, height: 30, borderRadius: 7, background: "#0065b1", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><path d="M15 10l4.553-2.069A1 1 0 0121 8.87v6.259a1 1 0 01-1.447.894L15 14"/><rect x="3" y="6" width="12" height="12" rx="2"/></svg>
+          </div>
+          <div>
+            <div style={{ fontWeight: 600, fontSize: 14, color: "#1a1a2e" }}>UN-CHK</div>
+            <div style={{ fontSize: 14, color: "#9ca3af" }}>Webinaire</div>
+          </div>
         </div>
-      </header>
 
-      <div className="adm-page-title">
-        <h1>Administration</h1>
-        <p>Gérez les salles, les utilisateurs et les enregistrements</p>
-      </div>
-
-      <div className="adm-tabs-wrap">
-        <div className="adm-tabs">
-          <button className={`adm-tab${tab==="rooms"?" active":""}`} onClick={() => setTab("rooms")}>
-            Salles{rooms.length>0?` (${rooms.length})`:""}
-          </button>
-          {user.role === "ADMIN" && (
-            <button className={`adm-tab${tab==="users"?" active":""}`} onClick={() => setTab("users")}>
-              Utilisateurs{users.length>0?` (${users.length})`:""}
+        {/* Nav */}
+        <div style={{ flex: 1, padding: "10px 8px", display: "flex", flexDirection: "column", gap: 2, overflowY: "auto" }}>
+          <div style={{ fontSize: 14, fontWeight: 500, color: "#9ca3af", padding: "6px 8px 2px", textTransform: "uppercase", letterSpacing: ".05em" }}>Administration</div>
+          {navItems.map(item => (
+            <button key={item.key} onClick={() => setNav(item.key as any)}
+              style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 8px", borderRadius: 8, border: "none", background: nav === item.key ? "#e8f4ff" : "none", color: nav === item.key ? "#0065b1" : "#6b7280", cursor: "pointer", fontFamily: "inherit", fontSize: 14, fontWeight: nav === item.key ? 600 : 400, textAlign: "left", width: "100%" }}>
+              {item.icon}
+              <span style={{ flex: 1 }}>{item.label}</span>
+              {item.count > 0 && (
+                <span style={{ background: nav === item.key ? "#0065b1" : "#f0f7ff", color: nav === item.key ? "white" : "#0065b1", fontSize: 14, padding: "1px 5px", borderRadius: 10, fontWeight: 600 }}>{item.count}</span>
+              )}
             </button>
+          ))}
+
+          {/* Salles liste rapide */}
+          {nav === "rooms" && rooms.length > 0 && (
+            <>
+              <div style={{ fontSize: 14, fontWeight: 500, color: "#9ca3af", padding: "10px 8px 2px", textTransform: "uppercase", letterSpacing: ".05em" }}>Salles</div>
+              {rooms.slice(0, 8).map(room => (
+                <button key={room.id} onClick={() => setSelectedRoom(room)}
+                  style={{ display: "flex", flexDirection: "column", padding: "6px 8px", borderRadius: 7, border: "none", background: selectedRoom?.id === room.id ? "#e8f4ff" : "none", cursor: "pointer", fontFamily: "inherit", textAlign: "left", width: "100%" }}>
+                  <span style={{ fontSize: 14, fontWeight: 500, color: selectedRoom?.id === room.id ? "#0065b1" : "#374151", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{room.title}</span>
+                  <span style={{ fontSize: 14, color: "#9ca3af", marginTop: 1 }}>{room.enrollments} enrôlé{room.enrollments > 1 ? "s" : ""}{room.recordings > 0 ? ` · ${room.recordings} enreg.` : ""}</span>
+                </button>
+              ))}
+            </>
           )}
-          <button className={`adm-tab${tab==="recordings"?" active":""}`} onClick={() => setTab("recordings")}>
-            Enregistrements{recordings.length>0?` (${recordings.length})`:""}
+        </div>
+
+        {/* Profil */}
+        <div style={{ padding: "10px 12px", borderTop: "1px solid #f0f7ff", display: "flex", alignItems: "center", gap: 8 }}>
+          <Avatar name={userName} color="#0065b1" />
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ fontSize: 14, fontWeight: 500, color: "#1a1a2e", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{userName}</div>
+            <div style={{ fontSize: 14, color: "#0065b1" }}>{ROLE_LABELS[user.role] ?? user.role}</div>
+          </div>
+          <button onClick={() => signOut({ callbackUrl: "/" })} title="Déconnexion"
+            style={{ background: "none", border: "none", cursor: "pointer", color: "#9ca3af", padding: 4, borderRadius: 5, display: "flex" }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
           </button>
         </div>
       </div>
 
-      <main className="adm-main">
+      {/* ── MAIN ── */}
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
 
-        {tab === "rooms" && (
-          <div className="adm-rooms-layout">
-            <div className="adm-card adm-rooms-list">
-              <div className="adm-card-header">
-                <span className="adm-card-title">Salles</span>
-                <span className="adm-count">{rooms.length}</span>
-              </div>
-              {loading ? <div className="adm-loading"><span className="adm-spinner" /> Chargement…</div>
-              : rooms.length === 0 ? <div className="adm-empty">Aucune salle</div>
-              : rooms.map(room => (
-                <div key={room.id} className="adm-room-item"
-                  style={{ borderLeft: selectedRoom?.id===room.id ? "3px solid #0065b1" : "3px solid transparent", background: selectedRoom?.id===room.id ? "#e8f4ff" : "white" }}
-                  onClick={() => setSelectedRoom(room)}>
-                  <div style={{ fontWeight:600, fontSize:"0.85rem", color:"#1a1a2e" }}>{room.title}</div>
-                  <div style={{ fontSize:"0.73rem", color:"#9ca3af", marginTop:2 }}>
-                    {room.creator.name} · {room.enrollments} enrôlé{room.enrollments>1?"s":""}
-                    {room.recordings>0?` · ${room.recordings} enreg.`:""}
-                  </div>
-                </div>
-              ))}
+        {/* Header contextuel */}
+        <div style={{ padding: "0 24px", height: 60, background: "white", borderBottom: "1px solid #e2e8f0", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 600, color: "#1a1a2e" }}>
+              {nav === "rooms" ? "Salles" : nav === "users" ? "Utilisateurs" : "Enregistrements"}
             </div>
-            <div className="adm-card adm-enroll-panel">
-              {selectedRoom
-                ? <EnrollPanel sessionId={selectedRoom.id} sessionTitle={selectedRoom.title} />
-                : <div className="adm-empty" style={{ padding:48 }}>Sélectionnez une salle pour gérer ses enrôlements</div>
-              }
+            <div style={{ fontSize: 13, color: "#9ca3af" }}>
+              {nav === "rooms" ? "Gérez les salles et les participants" : nav === "users" ? "Gérez les rôles et accès" : "Tous les enregistrements"}
             </div>
           </div>
-        )}
-
-        {tab === "users" && user.role === "ADMIN" && (
-          <div className="adm-card">
-            <div className="adm-card-header">
-              <span className="adm-card-title">Utilisateurs</span>
-              <span className="adm-count">{users.length}</span>
-            </div>
-            {loading ? <div className="adm-loading"><span className="adm-spinner" /> Chargement…</div> : (
-              <div className="adm-table-wrap">
-                <table className="adm-table">
-                  <thead><tr><th>Nom</th><th>Email</th><th>Rôle actuel</th><th>Salles</th><th>Inscrit le</th><th>Changer le rôle</th></tr></thead>
-                  <tbody>
-                    {users.map(u => (
-                      <tr key={u.id}>
-                        <td className="adm-td-bold">{u.name}</td>
-                        <td className="adm-td-muted">{u.email}</td>
-                        <td><span className={`adm-badge adm-badge-${u.role.toLowerCase()}`}>{ROLE_LABELS[u.role]??u.role}</span></td>
-                        <td className="adm-td-center">{u.sessionCount}</td>
-                        <td className="adm-td-muted">{new Date(u.createdAt).toLocaleDateString("fr-FR")}</td>
-                        <td>
-                          <select className="adm-select" value={u.role} disabled={updatingRole===u.id} onChange={e => changeRole(u.id, e.target.value)}>
-                            <option value="VIEWER">Spectateur</option>
-                            <option value="MODERATOR">Modérateur</option>
-                            <option value="ADMIN">Administrateur</option>
-                          </select>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            {rooms.some(r => r.status === "LIVE") && (
+              <div style={{ display: "flex", alignItems: "center", gap: 5, background: "#dcfce7", color: "#166534", fontSize: 14, padding: "4px 10px", borderRadius: 20 }}>
+                <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#22c55e" }} />
+                {rooms.filter(r => r.status === "LIVE").length} en direct
               </div>
             )}
+            <a href="/" style={{ fontSize: 14, padding: "6px 14px", background: "white", color: "#0065b1", border: "1px solid #0065b1", borderRadius: 7, textDecoration: "none", fontWeight: 500 }}>← Accueil</a>
           </div>
-        )}
+        </div>
 
-        {tab === "recordings" && (
-          <div className="adm-card">
-            <div className="adm-card-header">
-              <span className="adm-card-title">Enregistrements</span>
-              <span className="adm-count">{recordings.length}</span>
-            </div>
-            {loading ? <div className="adm-loading"><span className="adm-spinner" /> Chargement…</div>
-            : recordings.length === 0 ? <div className="adm-empty">Aucun enregistrement</div>
-            : recordings.map(rec => (
-              <div key={rec.id} className="adm-rec-item">
-                <div className="adm-rec-row">
-                  <svg className="adm-rec-icon" viewBox="0 0 24 24" fill="none">
-                    <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="1.5"/>
-                    <path d="M10 8l6 4-6 4V8z" fill="currentColor"/>
-                  </svg>
-                  <div className="adm-rec-info">
-                    <span className="adm-rec-filename">{rec.filename}</span>
-                    <div className="adm-rec-meta">
-                      <span>🏠 {rec.session.title}</span>
-                      <span>👤 {rec.session.creator.name}</span>
-                      {rec.duration!=null && <span>⏱ {formatDur(rec.duration)}</span>}
-                      {rec.size!=null && <span>💾 {formatSize(rec.size)}</span>}
-                      <span>{new Date(rec.createdAt).toLocaleString("fr-FR",{dateStyle:"short",timeStyle:"short"})}</span>
-                    </div>
+        {/* Contenu scrollable */}
+        <div style={{ flex: 1, overflow: "auto", padding: 20 }}>
+
+          {/* ── SALLES ── */}
+          {nav === "rooms" && (
+            <>
+              {/* Stats cards */}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(4,minmax(0,1fr))", gap: 12, marginBottom: 16 }}>
+                {[
+                  { label: "Salles", value: rooms.length, sub: `${rooms.filter(r => r.status === "LIVE").length} en direct`, color: "#0065b1" },
+                  { label: "Total enrôlés", value: rooms.reduce((a, r) => a + r.enrollments, 0), sub: "tous types", color: "#2fb344" },
+                  { label: "Enregistrements", value: rooms.reduce((a, r) => a + r.recordings, 0), sub: "stockés S3", color: "#d97706" },
+                  { label: "Sessions actives", value: rooms.filter(r => r.status === "LIVE").length, sub: "en ce moment", color: "#e53e3e" },
+                ].map(c => (
+                  <div key={c.label} style={{ background: "white", border: "1px solid #e2e8f0", borderRadius: 10, padding: "14px 16px" }}>
+                    <div style={{ fontSize: 13, color: "#6b7280", marginBottom: 4 }}>{c.label}</div>
+                    <div style={{ fontSize: 28, fontWeight: 600, color: c.color }}>{c.value}</div>
+                    <div style={{ fontSize: 14, color: "#9ca3af", marginTop: 3 }}>{c.sub}</div>
                   </div>
-                  <div className="adm-rec-actions">
-                    <button className="adm-btn adm-btn-primary" onClick={() => setPlayingKey(playingKey===rec.s3Key?null:rec.s3Key)}>
-                      {playingKey===rec.s3Key?"✖ Fermer":"▶ Voir"}
-                    </button>
-                    <a href={`/api/download-recording?key=${encodeURIComponent(rec.s3Key)}`}
-                      className="adm-btn adm-btn-green" target="_blank" rel="noopener noreferrer">
-                      ⬇ Télécharger
-                    </a>
-                    {user.role === "ADMIN" && (
-                      <button className="adm-btn adm-btn-delete" disabled={deletingRec===rec.id}
-                        onClick={() => deleteRecording(rec.id, rec.filename)}>
-                        {deletingRec===rec.id?"…":"🗑 Supprimer"}
-                      </button>
-                    )}
-                  </div>
-                </div>
-                {playingKey===rec.s3Key && (
-                  <div className="adm-rec-player">
-                    <video controls autoPlay src={`/api/download-recording?key=${encodeURIComponent(rec.s3Key)}`}>
-                      Votre navigateur ne supporte pas la lecture vidéo.
-                    </video>
-                  </div>
-                )}
+                ))}
               </div>
-            ))}
-          </div>
-        )}
-      </main>
 
-      <footer className="adm-footer">
-        <p>Ministère de l&apos;Enseignement Supérieur, de la Recherche et de l&apos;Innovation</p>
-        <p className="adm-footer-strong">Université Numérique Cheikh Hamidou Kane (UN-CHK)</p>
-        <p className="adm-footer-copy">© DITSI – UN-CHK – 2026 – Tous droits réservés</p>
-      </footer>
+              {/* Layout salles */}
+              <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
+                {/* Liste salles */}
+                <div style={{ width: 260, flexShrink: 0, background: "white", border: "1px solid #e2e8f0", borderRadius: 10, overflow: "hidden" }}>
+                  <div style={{ padding: "12px 14px", borderBottom: "1px solid #f0f7ff", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                    <span style={{ fontSize: 14, fontWeight: 600 }}>Salles</span>
+                    <span style={{ background: "#e8f4ff", color: "#0065b1", fontSize: 14, fontWeight: 700, padding: "2px 7px", borderRadius: 10 }}>{rooms.length}</span>
+                  </div>
+                  {loading ? <div style={{ padding: "20px 14px", color: "#9ca3af", fontSize: 14, display: "flex", alignItems: "center", gap: 8 }}><span style={{ width: 13, height: 13, border: "2px solid #e2e8f0", borderTopColor: "#0065b1", borderRadius: "50%", animation: "adm-spin .7s linear infinite", display: "inline-block" }} />Chargement…</div>
+                    : rooms.length === 0 ? <div style={{ padding: "20px 14px", textAlign: "center", color: "#9ca3af", fontSize: 14 }}>Aucune salle</div>
+                      : rooms.map(room => (
+                        <div key={room.id} onClick={() => setSelectedRoom(room)}
+                          style={{ padding: "10px 14px", cursor: "pointer", borderBottom: "1px solid #f0f7ff", borderLeft: `3px solid ${selectedRoom?.id === room.id ? "#0065b1" : "transparent"}`, background: selectedRoom?.id === room.id ? "#e8f4ff" : "white", transition: "background .12s" }}>
+                          <div style={{ fontSize: 14, fontWeight: 600, color: "#1a1a2e", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
+                            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{room.title}</span>
+                            {room.status === "LIVE" && <span style={{ fontSize: 9, fontWeight: 700, color: "#2fb344", flexShrink: 0 }}>● LIVE</span>}
+                          </div>
+                          <div style={{ fontSize: 13, color: "#9ca3af", marginTop: 2 }}>
+                            {room.creator.name} · {room.enrollments} enrôlé{room.enrollments > 1 ? "s" : ""}
+                            {room.recordings > 0 ? ` · ${room.recordings} enreg.` : ""}
+                          </div>
+                        </div>
+                      ))}
+                </div>
+
+                {/* Panel salle sélectionnée */}
+                <div style={{ flex: 1, background: "white", border: "1px solid #e2e8f0", borderRadius: 10, overflow: "hidden", minWidth: 0 }}>
+                  {selectedRoom ? (
+                    <>
+                      <div style={{ padding: "14px 18px", borderBottom: "1px solid #f0f7ff", display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
+                        <div>
+                          <div style={{ fontSize: 14, fontWeight: 600, color: "#1a1a2e" }}>{selectedRoom.title}</div>
+                          <div style={{ fontSize: 13, color: "#9ca3af", marginTop: 2 }}>Créé par {selectedRoom.creator.name}</div>
+                        </div>
+                        <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+                          <span style={{ padding: "3px 10px", borderRadius: 20, fontSize: 14, fontWeight: 600, background: selectedRoom.status === "LIVE" ? "#dcfce7" : "#f1f5f9", color: selectedRoom.status === "LIVE" ? "#166534" : "#6b7280" }}>
+                            {selectedRoom.status === "LIVE" ? "● En direct" : selectedRoom.status === "ENDED" ? "Terminée" : "Planifiée"}
+                          </span>
+                        </div>
+                      </div>
+                      <EnrollPanel sessionId={selectedRoom.id} sessionTitle={selectedRoom.title} />
+                    </>
+                  ) : (
+                    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: 300, color: "#9ca3af", gap: 8 }}>
+                      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M15 10l4.553-2.069A1 1 0 0121 8.87v6.259a1 1 0 01-1.447.894L15 14"/><rect x="3" y="6" width="12" height="12" rx="2"/></svg>
+                      <span style={{ fontSize: 15 }}>Sélectionnez une salle</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* ── UTILISATEURS ── */}
+          {nav === "users" && user.role === "ADMIN" && (
+            <div style={{ background: "white", border: "1px solid #e2e8f0", borderRadius: 10, overflow: "hidden" }}>
+              <div style={{ padding: "12px 16px", borderBottom: "1px solid #f0f7ff", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <span style={{ fontSize: 14, fontWeight: 600 }}>Utilisateurs</span>
+                  <span style={{ background: "#e8f4ff", color: "#0065b1", fontSize: 14, fontWeight: 700, padding: "2px 7px", borderRadius: 10 }}>{filteredUsers.length}</span>
+                </div>
+                <input placeholder="Rechercher par nom ou email…" value={userSearch} onChange={e => { setUserSearch(e.target.value); setUserPage(1) }}
+                  style={{ padding: "6px 10px", border: "1px solid #e2e8f0", borderRadius: 7, fontSize: 14, fontFamily: "inherit", outline: "none", color: "#1a1a2e", width: 240, background: "#f8fbff" }} />
+              </div>
+              {loading
+                ? <div style={{ padding: "30px 20px", color: "#9ca3af", fontSize: 14, display: "flex", alignItems: "center", gap: 8 }}><span style={{ width: 14, height: 14, border: "2px solid #e2e8f0", borderTopColor: "#0065b1", borderRadius: "50%", animation: "adm-spin .7s linear infinite", display: "inline-block" }} />Chargement…</div>
+                : (
+                  <>
+                    <div style={{ overflowX: "auto" }}>
+                      <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                        <thead>
+                          <tr style={{ background: "#f8fbff" }}>
+                            {["Utilisateur", "Email", "Rôle", "Salles", "Inscrit le", "Changer le rôle"].map(h => (
+                              <th key={h} style={{ padding: "9px 16px", textAlign: "left", fontSize: 13, fontWeight: 600, color: "#6b7280", borderBottom: "1px solid #f0f7ff", whiteSpace: "nowrap" }}>{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {pagedUsers.map(u => (
+                            <tr key={u.id} style={{ borderBottom: "1px solid #f0f7ff" }}>
+                              <td style={{ padding: "10px 16px" }}>
+                                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                  <Avatar name={u.name} color={u.role === "ADMIN" ? "#e53e3e" : u.role === "MODERATOR" ? "#0065b1" : "#6b7280"} />
+                                  <span style={{ fontSize: 14, fontWeight: 500, color: "#1a1a2e" }}>{u.name}</span>
+                                </div>
+                              </td>
+                              <td style={{ padding: "10px 16px", fontSize: 14, color: "#6b7280" }}>{u.email}</td>
+                              <td style={{ padding: "10px 16px" }}>
+                                <span style={{ padding: "3px 8px", borderRadius: 20, fontSize: 14, fontWeight: 600, background: u.role === "ADMIN" ? "#fee2e2" : u.role === "MODERATOR" ? "#dbeafe" : "#f3f4f6", color: u.role === "ADMIN" ? "#b91c1c" : u.role === "MODERATOR" ? "#1e40af" : "#374151" }}>
+                                  {ROLE_LABELS[u.role] ?? u.role}
+                                </span>
+                              </td>
+                              <td style={{ padding: "10px 16px", fontSize: 14, color: "#6b7280", textAlign: "center" }}>{u.sessionCount}</td>
+                              <td style={{ padding: "10px 16px", fontSize: 14, color: "#6b7280" }}>{new Date(u.createdAt).toLocaleDateString("fr-FR")}</td>
+                              <td style={{ padding: "10px 16px" }}>
+                                <select value={u.role} disabled={updatingRole === u.id} onChange={e => changeRole(u.id, e.target.value)}
+                                  style={{ padding: "5px 8px", border: "1px solid #e2e8f0", borderRadius: 6, fontSize: 14, color: "#1a1a2e", fontFamily: "inherit", cursor: "pointer", background: "white" }}>
+                                  <option value="VIEWER">Spectateur</option>
+                                  <option value="MODERATOR">Modérateur</option>
+                                  <option value="ADMIN">Administrateur</option>
+                                </select>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <Pagination total={filteredUsers.length} page={userPage} onPage={setUserPage} />
+                  </>
+                )}
+            </div>
+          )}
+
+          {/* ── ENREGISTREMENTS ── */}
+          {nav === "recordings" && (
+            <div style={{ background: "white", border: "1px solid #e2e8f0", borderRadius: 10, overflow: "hidden" }}>
+              <div style={{ padding: "12px 16px", borderBottom: "1px solid #f0f7ff", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <span style={{ fontSize: 14, fontWeight: 600 }}>Enregistrements</span>
+                <span style={{ background: "#e8f4ff", color: "#0065b1", fontSize: 14, fontWeight: 700, padding: "2px 7px", borderRadius: 10 }}>{recordings.length}</span>
+              </div>
+              {loading
+                ? <div style={{ padding: "30px 20px", color: "#9ca3af", fontSize: 14, display: "flex", alignItems: "center", gap: 8 }}><span style={{ width: 14, height: 14, border: "2px solid #e2e8f0", borderTopColor: "#0065b1", borderRadius: "50%", animation: "adm-spin .7s linear infinite", display: "inline-block" }} />Chargement…</div>
+                : recordings.length === 0 ? <div style={{ padding: "40px", textAlign: "center", color: "#9ca3af", fontSize: 15 }}>Aucun enregistrement</div>
+                  : (
+                    <>
+                      {pagedRecs.map(rec => (
+                        <div key={rec.id} style={{ borderBottom: "1px solid #f0f7ff" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px" }}>
+                            <div style={{ width: 34, height: 34, borderRadius: 8, background: "#e8f4ff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#0065b1" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M10 8l6 4-6 4V8z"/></svg>
+                            </div>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontSize: 14, fontWeight: 600, color: "#1a1a2e", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{rec.filename}</div>
+                              <div style={{ display: "flex", gap: 10, marginTop: 3, flexWrap: "wrap" }}>
+                                <span style={{ fontSize: 13, color: "#9ca3af" }}>🏠 {rec.session.title}</span>
+                                <span style={{ fontSize: 13, color: "#9ca3af" }}>👤 {rec.session.creator.name}</span>
+                                {rec.duration != null && <span style={{ fontSize: 13, color: "#9ca3af" }}>⏱ {formatDur(rec.duration)}</span>}
+                                {rec.size != null && <span style={{ fontSize: 13, color: "#9ca3af" }}>💾 {formatSize(rec.size)}</span>}
+                                <span style={{ fontSize: 13, color: "#9ca3af" }}>{new Date(rec.createdAt).toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" })}</span>
+                              </div>
+                            </div>
+                            <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                              <button onClick={() => setPlayingKey(playingKey === rec.s3Key ? null : rec.s3Key)}
+                                style={{ padding: "5px 12px", background: "#0065b1", color: "white", border: "none", borderRadius: 6, fontSize: 14, cursor: "pointer", fontFamily: "inherit" }}>
+                                {playingKey === rec.s3Key ? "✖ Fermer" : "▶ Voir"}
+                              </button>
+                              <a href={`/api/download-recording?key=${encodeURIComponent(rec.s3Key)}`} target="_blank" rel="noopener noreferrer"
+                                style={{ padding: "5px 12px", background: "white", color: "#2fb344", border: "1px solid #2fb344", borderRadius: 6, fontSize: 14, textDecoration: "none", fontFamily: "inherit" }}>⬇</a>
+                              {user.role === "ADMIN" && (
+                                <button disabled={deletingRec === rec.id} onClick={() => deleteRecording(rec.id, rec.filename)}
+                                  style={{ padding: "5px 10px", background: "white", color: "#e53e3e", border: "1px solid #e53e3e", borderRadius: 6, fontSize: 14, cursor: "pointer", fontFamily: "inherit", opacity: deletingRec === rec.id ? .5 : 1 }}>
+                                  {deletingRec === rec.id ? "…" : "🗑"}
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                          {playingKey === rec.s3Key && (
+                            <div style={{ padding: "0 16px 14px" }}>
+                              <video controls autoPlay src={`/api/download-recording?key=${encodeURIComponent(rec.s3Key)}`} style={{ width: "100%", maxHeight: 420, borderRadius: 8, background: "#000", display: "block" }}>
+                                Votre navigateur ne supporte pas la lecture vidéo.
+                              </video>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                      <Pagination total={recordings.length} page={recPage} onPage={setRecPage} />
+                    </>
+                  )}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div style={{ background: "white", borderTop: "1px solid #e2e8f0", padding: "12px 24px", textAlign: "center", flexShrink: 0 }}>
+          <p style={{ fontSize: 13, color: "#6b7280" }}>Ministère de l&apos;Enseignement Supérieur, de la Recherche et de l&apos;Innovation</p>
+          <p style={{ fontSize: 14, fontWeight: 600, color: "#0065b1" }}>Université Numérique Cheikh Hamidou Kane (UN-CHK)</p>
+          <p style={{ fontSize: 12, color: "#9ca3af" }}>© DITSI – UN-CHK – 2026</p>
+        </div>
+      </div>
 
       <style>{`
-        *{box-sizing:border-box;margin:0;padding:0;}
-        .adm-root{min-height:100vh;display:flex;flex-direction:column;background:#f8fafd;font-family:'Google Sans','Segoe UI',system-ui,sans-serif;color:#1a1a2e;}
-        .adm-header{display:flex;align-items:center;justify-content:space-between;padding:0 32px;height:64px;background:#fff;border-bottom:1px solid #e2e8f0;}
-        .adm-logo-link{display:flex;align-items:center;}
-        .adm-header-right{display:flex;align-items:center;gap:12px;}
-        .adm-username{font-size:0.88rem;color:#374151;font-weight:500;}
-        .adm-btn{display:inline-flex;align-items:center;gap:5px;padding:7px 16px;border-radius:8px;font-size:0.83rem;font-weight:600;font-family:inherit;cursor:pointer;text-decoration:none;border:none;white-space:nowrap;transition:filter .15s;}
-        .adm-btn-outline:hover:not(:disabled){background:#e8f4ff;} .adm-btn-danger:hover:not(:disabled){background:#fff0f0;} .adm-btn-primary:hover:not(:disabled){background:#004d8c;} .adm-btn-green:hover:not(:disabled){background:#e6f7eb;} .adm-btn-delete:hover:not(:disabled){background:#fff0f0;}
-        .adm-btn:disabled{opacity:.45;cursor:not-allowed;}
-        .adm-btn-outline{background:#fff;border:1.5px solid #0065b1;color:#0065b1;}
-        .adm-btn-danger{background:#fff;border:1.5px solid #e53e3e;color:#e53e3e;}
-        .adm-btn-primary{background:#0065b1;color:#fff;}
-        .adm-btn-green{background:#fff;border:1.5px solid #2fb344;color:#2fb344;}
-        .adm-btn-delete{background:#fff;border:1.5px solid #e53e3e;color:#e53e3e;}
-        .adm-page-title{padding:28px 32px 0;}
-        .adm-page-title h1{font-size:1.6rem;font-weight:700;}
-        .adm-page-title p{font-size:0.88rem;color:#6b7280;margin-top:4px;}
-        .adm-tabs-wrap{padding:20px 32px 0;}
-        .adm-tabs{display:flex;border-bottom:2px solid #e2e8f0;}
-        .adm-tab{padding:10px 24px;background:none;border:none;font-family:inherit;font-size:0.88rem;font-weight:500;color:#6b7280;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;transition:all .15s;}
-        .adm-tab:hover{color:#0065b1;}
-        .adm-tab.active{color:#0065b1;border-bottom-color:#0065b1;font-weight:700;}
-        .adm-main{flex:1;max-width:1140px;width:100%;margin:0 auto;padding:24px 32px 40px;}
-        .adm-card{background:#fff;border-radius:12px;border:1px solid #e2e8f0;overflow:hidden;}
-        .adm-card-header{display:flex;align-items:center;justify-content:space-between;padding:16px 24px;border-bottom:1px solid #f0f7ff;}
-        .adm-card-title{font-size:0.95rem;font-weight:700;}
-        .adm-count{background:#e8f4ff;color:#0065b1;font-size:0.72rem;font-weight:700;padding:2px 8px;border-radius:10px;}
-        .adm-loading{display:flex;align-items:center;gap:10px;padding:40px 24px;color:#9ca3af;}
-        .adm-spinner{width:16px;height:16px;border:2px solid #e2e8f0;border-top-color:#0065b1;border-radius:50%;animation:adm-spin .7s linear infinite;display:inline-block;}
-        @keyframes adm-spin{to{transform:rotate(360deg)}}
-        .adm-empty{padding:40px;text-align:center;color:#9ca3af;font-size:0.9rem;}
-        .adm-rooms-layout{display:flex;gap:16px;align-items:flex-start;}
-        .adm-rooms-list{width:300px;flex-shrink:0;}
-        .adm-enroll-panel{flex:1;min-width:0;}
-        .adm-room-item{padding:12px 18px;cursor:pointer;border-bottom:1px solid #f0f7ff;transition:background .12s;}
-        .adm-room-item:last-child{border-bottom:none;}
-        .adm-room-item:hover{background:#f8fbff;}
-        .adm-table-wrap{overflow-x:auto;}
-        .adm-table{width:100%;border-collapse:collapse;}
-        .adm-table th{padding:10px 20px;background:#f8fbff;font-size:0.75rem;font-weight:600;color:#6b7280;text-align:left;border-bottom:1px solid #e8f4ff;white-space:nowrap;}
-        .adm-table td{padding:13px 20px;font-size:0.85rem;border-bottom:1px solid #f0f7ff;vertical-align:middle;}
-        .adm-table tr:last-child td{border-bottom:none;}
-        .adm-table tr:hover td{background:#f8fbff;}
-        .adm-td-bold{font-weight:600;}
-        .adm-td-muted{color:#6b7280;font-size:0.82rem;}
-        .adm-td-center{text-align:center;color:#6b7280;}
-        .adm-badge{padding:3px 10px;border-radius:20px;font-size:0.72rem;font-weight:700;}
-        .adm-badge-admin{background:#fee2e2;color:#b91c1c;}
-        .adm-badge-moderator{background:#dbeafe;color:#1e40af;}
-        .adm-badge-viewer{background:#f3f4f6;color:#374151;}
-        .adm-select{padding:5px 10px;border:1.5px solid #e2e8f0;border-radius:7px;font-size:0.82rem;color:#1a1a2e;font-family:inherit;cursor:pointer;background:#fff;}
-        .adm-select:focus{border-color:#0065b1;outline:none;}
-        .adm-select:disabled{opacity:.5;cursor:not-allowed;}
-        .adm-rec-item{border-bottom:1px solid #f0f7ff;}
-        .adm-rec-item:last-child{border-bottom:none;}
-        .adm-rec-row{display:flex;align-items:center;gap:14px;padding:14px 20px;}
-        .adm-rec-icon{width:28px;height:28px;color:#0065b1;flex-shrink:0;}
-        .adm-rec-info{flex:1;min-width:0;}
-        .adm-rec-filename{font-size:0.88rem;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block;}
-        .adm-rec-meta{display:flex;gap:14px;margin-top:4px;flex-wrap:wrap;}
-        .adm-rec-meta span{font-size:0.75rem;color:#9ca3af;}
-        .adm-rec-actions{display:flex;align-items:center;gap:8px;flex-shrink:0;}
-        .adm-rec-player{padding:0 20px 16px;}
-        .adm-rec-player video{width:100%;max-height:420px;border-radius:8px;background:#000;display:block;}
-        .adm-footer{background:#fff;border-top:1px solid #e2e8f0;padding:20px 32px;text-align:center;display:flex;flex-direction:column;gap:3px;margin-top:auto;}
-        .adm-footer p{font-size:0.78rem;color:#6b7280;}
-        .adm-footer-strong{font-size:0.88rem;font-weight:700;color:#0065b1!important;}
-        .adm-footer-copy{font-size:0.72rem;color:#9ca3af!important;}
-        @media(max-width:900px){.adm-rooms-layout{flex-direction:column;}.adm-rooms-list{width:100%;}.adm-header,.adm-page-title,.adm-tabs-wrap,.adm-main{padding-left:16px;padding-right:16px;}}
+        @keyframes adm-spin { to { transform: rotate(360deg) } }
+        @keyframes ep-progress { 0% { transform: translateX(-150%) } 100% { transform: translateX(350%) } }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        ::-webkit-scrollbar { width: 5px; height: 5px; }
+        ::-webkit-scrollbar-track { background: #f8fafd; }
+        ::-webkit-scrollbar-thumb { background: #d1e4f5; border-radius: 3px; }
       `}</style>
     </div>
   )
