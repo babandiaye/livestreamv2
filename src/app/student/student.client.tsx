@@ -1,7 +1,6 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import Image from "next/image"
 import { signOut } from "next-auth/react"
 
 type Room = {
@@ -23,9 +22,14 @@ type Recording = {
 
 function formatDuration(seconds: number | null) {
   if (!seconds) return ""
-  const m = Math.floor(seconds / 60)
+  const h = Math.floor(seconds / 3600)
+  const m = Math.floor((seconds % 3600) / 60)
   const s = seconds % 60
-  return `${m}:${s.toString().padStart(2, "0")}`
+  return h > 0 ? `${h}h${m.toString().padStart(2, "0")}m` : `${m}:${s.toString().padStart(2, "0")}`
+}
+
+function initials(name: string) {
+  return (name || "?").split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2)
 }
 
 export default function StudentClient({
@@ -33,11 +37,11 @@ export default function StudentClient({
 }: {
   user: { name?: string | null; email?: string | null }
 }) {
-  const [rooms, setRooms]               = useState<Room[]>([])
-  const [loading, setLoading]           = useState(true)
+  const [rooms, setRooms] = useState<Room[]>([])
+  const [loading, setLoading] = useState(true)
   const [selectedRoom, setSelectedRoom] = useState<Room | null>(null)
-  const [playingKey, setPlayingKey]     = useState<string | null>(null)
-  const [joining, setJoining]           = useState(false)
+  const [playingKey, setPlayingKey] = useState<string | null>(null)
+  const [joining, setJoining] = useState(false)
 
   useEffect(() => {
     fetch("/api/rooms")
@@ -61,12 +65,10 @@ export default function StudentClient({
       if (msg.includes("already exists") || msg.includes("Participant already")) {
         setJoining(false)
         const choice = window.prompt(
-          `Le nom "${identity}" est déjà utilisé dans cette salle.\n\nEntrez un suffixe pour vous différencier (ex: 2, 3, Bis…) :`,
+          `Le nom "${identity}" est déjà utilisé.\nEntrez un suffixe (ex: 2, 3…) :`,
           "2"
         )
-        if (choice) {
-          joinSession(room, choice.trim())
-        }
+        if (choice) joinSession(room, choice.trim())
         return
       }
       alert("Erreur lors de la connexion")
@@ -79,203 +81,227 @@ export default function StudentClient({
     setJoining(false)
   }
 
+  const userName = user.name ?? user.email ?? "Étudiant"
+  const liveRooms = rooms.filter(r => r.status === "LIVE")
+
   return (
-    <div className="st-root">
-      {/* HEADER */}
-      <header className="st-header">
-        <a href="/" className="st-logo-link">
-          <Image src="/logo-unchk.png" alt="UN-CHK" width={110} height={44}
-            style={{ objectFit: "contain" }} priority />
-        </a>
-        <div className="st-header-right">
-          <span className="st-username">{user.name ?? user.email}</span>
-          <button className="st-btn st-btn-outline"
-            onClick={() => signOut({ callbackUrl: "/" })}>
-            Déconnexion
-          </button>
-        </div>
-      </header>
+    <div style={{ display: "flex", height: "100vh", fontFamily: "'Google Sans','Segoe UI',system-ui,sans-serif", color: "#1a1a2e", background: "#f8fafd" }}>
 
-      <div className="st-layout">
-        {/* LISTE SALLES */}
-        <div className="st-sidebar">
-          <div className="st-sidebar-header">
-            <span className="st-sidebar-title">Mes salles</span>
-            <span className="st-count">{rooms.length}</span>
+      {/* ── SIDEBAR ── */}
+      <div style={{ width: 210, flexShrink: 0, background: "white", borderRight: "1px solid #e2e8f0", display: "flex", flexDirection: "column" }}>
+        {/* Logo */}
+        <div style={{ padding: "16px 14px 12px", borderBottom: "1px solid #f0f7ff", display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{ width: 30, height: 30, borderRadius: 7, background: "#0065b1", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><path d="M15 10l4.553-2.069A1 1 0 0121 8.87v6.259a1 1 0 01-1.447.894L15 14"/><rect x="3" y="6" width="12" height="12" rx="2"/></svg>
           </div>
-          {loading ? (
-            <div className="st-loading"><span className="st-spinner" /> Chargement…</div>
-          ) : rooms.length === 0 ? (
-            <div className="st-empty">
-              <p>Aucune salle assignée.</p>
-              <p style={{ marginTop: 6, fontSize: "0.78rem" }}>
-                Contactez votre modérateur.
-              </p>
-            </div>
-          ) : rooms.map(room => (
-            <div
-              key={room.id}
-              className={`st-room-item${selectedRoom?.id === room.id ? " active" : ""}`}
-              onClick={() => { setSelectedRoom(room); setPlayingKey(null) }}
-            >
-              <div className="st-room-title">{room.title}</div>
-              <div className="st-room-meta">
-                {room.status === "LIVE" && <span className="st-live">● LIVE</span>}
-                <span>{room.recordings.length} enreg.</span>
-              </div>
-            </div>
-          ))}
+          <div>
+            <div style={{ fontWeight: 600, fontSize: 14, color: "#1a1a2e" }}>UN-CHK</div>
+            <div style={{ fontSize: 11, color: "#9ca3af" }}>Webinaire</div>
+          </div>
         </div>
 
-        {/* CONTENU */}
-        <div className="st-main">
-          {!selectedRoom ? (
-            <div className="st-placeholder">
-              <div style={{ fontSize: "2.5rem" }}>🏠</div>
-              <p>Sélectionnez une salle</p>
+        {/* Liste des salles */}
+        <div style={{ flex: 1, overflow: "auto" }}>
+          <div style={{ padding: "10px 8px 4px" }}>
+            <div style={{ fontSize: 11, fontWeight: 500, color: "#9ca3af", padding: "4px 8px 6px", textTransform: "uppercase", letterSpacing: ".05em" }}>
+              Mes webinaires
+              {rooms.length > 0 && <span style={{ background: "#f0f7ff", color: "#0065b1", fontSize: 10, padding: "1px 5px", borderRadius: 10, fontWeight: 600, marginLeft: 6 }}>{rooms.length}</span>}
+            </div>
+          </div>
+
+          {loading ? (
+            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "16px 14px", color: "#9ca3af", fontSize: 13 }}>
+              <span style={{ width: 13, height: 13, border: "2px solid #e2e8f0", borderTopColor: "#0065b1", borderRadius: "50%", animation: "st-spin .7s linear infinite", display: "inline-block" }} />Chargement…
+            </div>
+          ) : rooms.length === 0 ? (
+            <div style={{ padding: "16px 14px", color: "#9ca3af", fontSize: 13, textAlign: "center" }}>
+              Aucune salle assignée
             </div>
           ) : (
-            <div className="st-card">
-              {/* En-tête salle */}
-              <div className="st-card-header">
-                <div>
-                  <h1 className="st-card-title">{selectedRoom.title}</h1>
-                  {selectedRoom.description && (
-                    <p className="st-card-desc">{selectedRoom.description}</p>
-                  )}
-                </div>
-                <button
-                  className="st-btn st-btn-primary"
-                  disabled={joining}
-                  onClick={() => joinSession(selectedRoom)}
-                >
-                  {joining ? "Connexion…" : "Rejoindre la session"}
-                </button>
-              </div>
-
-              {/* Enregistrements */}
-              <div className="st-rec-header">
-                <span className="st-rec-title">Enregistrements</span>
-                {selectedRoom.recordings.length > 0 && (
-                  <span className="st-count">{selectedRoom.recordings.length}</span>
-                )}
-              </div>
-
-              {selectedRoom.recordings.length === 0 ? (
-                <div className="st-empty" style={{ padding: "32px 24px" }}>
-                  Aucun enregistrement disponible
-                </div>
-              ) : selectedRoom.recordings.map(rec => (
-                <div key={rec.id} className="st-rec-item">
-                  <div className="st-rec-row">
-                    <svg className="st-rec-icon" viewBox="0 0 24 24" fill="none">
-                      <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="1.5"/>
-                      <path d="M10 8l6 4-6 4V8z" fill="currentColor"/>
-                    </svg>
-                    <div className="st-rec-info">
-                      <span className="st-rec-name">{rec.filename}</span>
-                      <div className="st-rec-meta">
-                        {rec.duration && <span>⏱ {formatDuration(rec.duration)}</span>}
-                        <span>
-                          {new Date(rec.createdAt).toLocaleString("fr-FR", {
-                            dateStyle: "short", timeStyle: "short"
-                          })}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="st-rec-actions">
-                      <button
-                        className="st-btn st-btn-primary"
-                        onClick={() => setPlayingKey(
-                          playingKey === rec.s3Key ? null : rec.s3Key
-                        )}
-                      >
-                        {playingKey === rec.s3Key ? "Fermer" : "Voir"}
-                      </button>
-                      <a
-                        href={`/api/download-recording?key=${encodeURIComponent(rec.s3Key)}`}
-                        className="st-btn st-btn-green"
-                        target="_blank" rel="noopener noreferrer"
-                      >
-                        Télécharger
-                      </a>
-                    </div>
+            <div style={{ padding: "0 8px 8px", display: "flex", flexDirection: "column", gap: 2 }}>
+              {rooms.map(room => (
+                <button key={room.id}
+                  onClick={() => { setSelectedRoom(room); setPlayingKey(null) }}
+                  style={{ display: "flex", flexDirection: "column", padding: "8px 10px", borderRadius: 8, border: "none", background: selectedRoom?.id === room.id ? "#e8f4ff" : "none", cursor: "pointer", fontFamily: "inherit", textAlign: "left", width: "100%", borderLeft: `3px solid ${selectedRoom?.id === room.id ? "#0065b1" : "transparent"}` }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 5, width: "100%" }}>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: selectedRoom?.id === room.id ? "#0065b1" : "#1a1a2e", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>{room.title}</span>
+                    {room.status === "LIVE" && <div style={{ width: 7, height: 7, borderRadius: "50%", background: "#22c55e", flexShrink: 0 }} />}
                   </div>
-                  {playingKey === rec.s3Key && (
-                    <div className="st-rec-player">
-                      <video controls autoPlay
-                        src={`/api/download-recording?key=${encodeURIComponent(rec.s3Key)}`}>
-                        Votre navigateur ne supporte pas la lecture vidéo.
-                      </video>
-                    </div>
-                  )}
-                </div>
+                  <span style={{ fontSize: 11, color: "#9ca3af", marginTop: 2 }}>
+                    {room.status === "LIVE"
+                      ? <span style={{ color: "#22c55e", fontWeight: 600 }}>En direct</span>
+                      : room.status === "ENDED"
+                        ? `${room.recordings.length} enreg.`
+                        : "Planifiée"
+                    }
+                  </span>
+                </button>
               ))}
             </div>
           )}
         </div>
+
+        {/* Profil */}
+        <div style={{ padding: "10px 12px", borderTop: "1px solid #f0f7ff", display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{ width: 28, height: 28, borderRadius: "50%", background: "#e8f4ff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 600, color: "#0065b1", flexShrink: 0 }}>
+            {initials(userName)}
+          </div>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ fontSize: 12, fontWeight: 500, color: "#1a1a2e", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{userName}</div>
+            <div style={{ fontSize: 11, color: "#9ca3af" }}>Spectateur</div>
+          </div>
+          <button onClick={() => signOut({ callbackUrl: "/" })} title="Déconnexion"
+            style={{ background: "none", border: "none", cursor: "pointer", color: "#e53e3e", padding: 4, borderRadius: 5, display: "flex" }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+          </button>
+        </div>
       </div>
 
-      {/* FOOTER */}
-      <footer className="st-footer">
-        <p>Ministère de l&apos;Enseignement Supérieur, de la Recherche et de l&apos;Innovation</p>
-        <p className="st-footer-strong">Université Numérique Cheikh Hamidou Kane (UN-CHK)</p>
-        <p className="st-footer-copy">© DITSI – UN-CHK – 2026 – Tous droits réservés</p>
-      </footer>
+      {/* ── MAIN ── */}
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+
+        {/* Header */}
+        <div style={{ padding: "0 24px", height: 60, background: "white", borderBottom: "1px solid #e2e8f0", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
+          <div>
+            <div style={{ fontSize: 15, fontWeight: 600, color: "#1a1a2e" }}>
+              {selectedRoom ? selectedRoom.title : "Mes webinaires"}
+            </div>
+            <div style={{ fontSize: 12, color: "#9ca3af" }}>
+              {selectedRoom ? "Détails de la session" : "Sélectionnez une salle"}
+            </div>
+          </div>
+          {liveRooms.length > 0 && (
+            <div style={{ display: "flex", alignItems: "center", gap: 5, background: "#dcfce7", color: "#166534", fontSize: 13, padding: "4px 12px", borderRadius: 20 }}>
+              <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#22c55e" }} />
+              {liveRooms.length} session{liveRooms.length > 1 ? "s" : ""} en direct
+            </div>
+          )}
+        </div>
+
+        {/* Contenu */}
+        <div style={{ flex: 1, overflow: "auto", padding: 20 }}>
+
+          {!selectedRoom ? (
+            /* Placeholder — aucune salle sélectionnée */
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "60%", gap: 14, color: "#9ca3af" }}>
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1"><path d="M15 10l4.553-2.069A1 1 0 0121 8.87v6.259a1 1 0 01-1.447.894L15 14"/><rect x="3" y="6" width="12" height="12" rx="2"/></svg>
+              <p style={{ fontSize: 15 }}>Sélectionnez une salle dans le menu</p>
+              {rooms.length === 0 && !loading && (
+                <p style={{ fontSize: 13, color: "#c4cdd9" }}>Contactez votre modérateur pour être enrôlé</p>
+              )}
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+
+              {/* Card principale de la salle */}
+              <div style={{ background: "white", border: `2px solid ${selectedRoom.status === "LIVE" ? "#22c55e" : "#e2e8f0"}`, borderRadius: 12, overflow: "hidden" }}>
+
+                {/* Banner LIVE */}
+                {selectedRoom.status === "LIVE" && (
+                  <div style={{ background: "#f0fdf4", padding: "10px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid #bbf7d0" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <div style={{ width: 7, height: 7, borderRadius: "50%", background: "#22c55e" }} />
+                      <span style={{ fontSize: 13, fontWeight: 600, color: "#166534" }}>Session en direct</span>
+                    </div>
+                    <span style={{ fontSize: 12, color: "#166534" }}>Rejoignez maintenant !</span>
+                  </div>
+                )}
+
+                {/* Infos salle */}
+                <div style={{ padding: "20px 24px", display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16 }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 18, fontWeight: 600, color: "#1a1a2e", marginBottom: 6 }}>{selectedRoom.title}</div>
+                    {selectedRoom.description && (
+                      <div style={{ fontSize: 13, color: "#6b7280", marginBottom: 12 }}>{selectedRoom.description}</div>
+                    )}
+                    <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                        <span style={{ fontSize: 12, color: "#9ca3af" }}>Statut :</span>
+                        <span style={{ padding: "2px 10px", borderRadius: 20, fontSize: 12, fontWeight: 600, background: selectedRoom.status === "LIVE" ? "#dcfce7" : "#f1f5f9", color: selectedRoom.status === "LIVE" ? "#166534" : "#6b7280" }}>
+                          {selectedRoom.status === "LIVE" ? "● En direct" : selectedRoom.status === "ENDED" ? "Terminée" : "Planifiée"}
+                        </span>
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                        <span style={{ fontSize: 12, color: "#9ca3af" }}>Enregistrements :</span>
+                        <span style={{ fontSize: 13, fontWeight: 600, color: selectedRoom.recordings.length > 0 ? "#0065b1" : "#9ca3af" }}>
+                          {selectedRoom.recordings.length > 0 ? `${selectedRoom.recordings.length} disponible${selectedRoom.recordings.length > 1 ? "s" : ""}` : "Aucun"}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  <button disabled={joining} onClick={() => joinSession(selectedRoom)}
+                    style={{ padding: "10px 28px", background: selectedRoom.status === "LIVE" ? "#22c55e" : "#0065b1", color: "white", border: "none", borderRadius: 9, fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", opacity: joining ? .5 : 1, whiteSpace: "nowrap", flexShrink: 0 }}>
+                    {joining ? "Connexion…" : selectedRoom.status === "LIVE" ? "Rejoindre →" : "Rejoindre"}
+                  </button>
+                </div>
+              </div>
+
+              {/* Enregistrements de cette salle */}
+              {selectedRoom.recordings.length > 0 && (
+                <div style={{ background: "white", border: "1px solid #e2e8f0", borderRadius: 10, overflow: "hidden" }}>
+                  <div style={{ padding: "12px 20px", borderBottom: "1px solid #f0f7ff", display: "flex", alignItems: "center", gap: 8 }}>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#0065b1" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M10 8l6 4-6 4V8z"/></svg>
+                    <span style={{ fontSize: 14, fontWeight: 600 }}>Enregistrements</span>
+                    <span style={{ background: "#e8f4ff", color: "#0065b1", fontSize: 12, fontWeight: 700, padding: "2px 7px", borderRadius: 10 }}>{selectedRoom.recordings.length}</span>
+                  </div>
+                  {selectedRoom.recordings.map(rec => (
+                    <div key={rec.id} style={{ borderBottom: "1px solid #f0f7ff" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 20px" }}>
+                        <div style={{ width: 36, height: 36, borderRadius: 9, background: "#e8f4ff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#0065b1" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M10 8l6 4-6 4V8z"/></svg>
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 14, fontWeight: 600, color: "#1a1a2e", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{rec.filename}</div>
+                          <div style={{ display: "flex", gap: 12, marginTop: 3 }}>
+                            {rec.duration && <span style={{ fontSize: 13, color: "#9ca3af" }}>⏱ {formatDuration(rec.duration)}</span>}
+                            <span style={{ fontSize: 13, color: "#9ca3af" }}>{new Date(rec.createdAt).toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" })}</span>
+                          </div>
+                        </div>
+                        <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                          <button onClick={() => setPlayingKey(playingKey === rec.s3Key ? null : rec.s3Key)}
+                            style={{ padding: "6px 14px", background: "#0065b1", color: "white", border: "none", borderRadius: 7, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
+                            {playingKey === rec.s3Key ? "✖ Fermer" : "▶ Voir"}
+                          </button>
+                          <a href={`/api/download-recording?key=${encodeURIComponent(rec.s3Key)}`} target="_blank" rel="noopener noreferrer"
+                            style={{ padding: "6px 14px", background: "white", color: "#2fb344", border: "1px solid #2fb344", borderRadius: 7, fontSize: 13, textDecoration: "none", display: "inline-flex", alignItems: "center" }}>⬇ Télécharger</a>
+                        </div>
+                      </div>
+                      {playingKey === rec.s3Key && (
+                        <div style={{ padding: "0 20px 16px" }}>
+                          <video controls autoPlay src={`/api/download-recording?key=${encodeURIComponent(rec.s3Key)}`}
+                            style={{ width: "100%", maxHeight: 420, borderRadius: 10, background: "#000", display: "block" }}>
+                            Votre navigateur ne supporte pas la lecture vidéo.
+                          </video>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {selectedRoom.recordings.length === 0 && (
+                <div style={{ background: "white", border: "1px solid #e2e8f0", borderRadius: 10, padding: "32px", textAlign: "center", color: "#9ca3af", fontSize: 14 }}>
+                  Aucun enregistrement disponible pour cette session
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div style={{ background: "white", borderTop: "1px solid #e2e8f0", padding: "10px 24px", textAlign: "center", flexShrink: 0 }}>
+          <p style={{ fontSize: 13, color: "#6b7280" }}>Ministère de l&apos;Enseignement Supérieur, de la Recherche et de l&apos;Innovation</p>
+          <p style={{ fontSize: 14, fontWeight: 600, color: "#0065b1" }}>Université Numérique Cheikh Hamidou Kane (UN-CHK)</p>
+          <p style={{ fontSize: 12, color: "#9ca3af" }}>© DITSI – UN-CHK – 2026</p>
+        </div>
+      </div>
 
       <style>{`
-        *{box-sizing:border-box;margin:0;padding:0;}
-        .st-root{min-height:100vh;display:flex;flex-direction:column;background:#f8fafd;font-family:'Google Sans','Segoe UI',system-ui,sans-serif;color:#1a1a2e;}
-        .st-header{display:flex;align-items:center;justify-content:space-between;padding:0 32px;height:64px;background:#fff;border-bottom:1px solid #e2e8f0;}
-        .st-logo-link{display:flex;align-items:center;}
-        .st-header-right{display:flex;align-items:center;gap:12px;}
-        .st-username{font-size:0.88rem;color:#374151;font-weight:500;}
-        .st-btn{display:inline-flex;align-items:center;gap:5px;padding:7px 16px;border-radius:8px;font-size:0.83rem;font-weight:600;font-family:inherit;cursor:pointer;text-decoration:none;border:none;white-space:nowrap;transition:filter .15s;}
-        .st-btn:hover:not(:disabled){filter:brightness(.92);}
-        .st-btn:disabled{opacity:.5;cursor:not-allowed;}
-        .st-btn-outline{background:#fff;border:1.5px solid #0065b1;color:#0065b1;}
-        .st-btn-primary{background:#0065b1;color:#fff;}
-        .st-btn-green{background:#fff;border:1.5px solid #2fb344;color:#2fb344;}
-        .st-layout{display:flex;flex:1;max-width:1140px;margin:0 auto;width:100%;padding:24px 32px 40px;gap:20px;}
-        .st-sidebar{width:280px;flex-shrink:0;background:#fff;border-radius:12px;border:1px solid #e2e8f0;overflow:hidden;align-self:start;}
-        .st-sidebar-header{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid #f0f7ff;}
-        .st-sidebar-title{font-size:0.95rem;font-weight:700;}
-        .st-count{background:#e8f4ff;color:#0065b1;font-size:0.72rem;font-weight:700;padding:2px 8px;border-radius:10px;}
-        .st-loading{display:flex;align-items:center;gap:8px;padding:24px 18px;color:#9ca3af;font-size:0.85rem;}
-        .st-spinner{width:14px;height:14px;border:2px solid #e2e8f0;border-top-color:#0065b1;border-radius:50%;animation:st-spin .7s linear infinite;display:inline-block;}
-        @keyframes st-spin{to{transform:rotate(360deg)}}
-        .st-empty{padding:24px 18px;color:#9ca3af;font-size:0.85rem;text-align:center;}
-        .st-room-item{padding:12px 18px;cursor:pointer;border-bottom:1px solid #f0f7ff;transition:background .12s;border-left:3px solid transparent;}
-        .st-room-item:last-child{border-bottom:none;}
-        .st-room-item:hover{background:#f8fbff;}
-        .st-room-item.active{background:#e8f4ff;border-left-color:#0065b1;}
-        .st-room-title{font-size:0.88rem;font-weight:600;color:#1a1a2e;}
-        .st-room-meta{display:flex;align-items:center;gap:8px;margin-top:3px;font-size:0.75rem;color:#9ca3af;}
-        .st-live{color:#2fb344;font-weight:700;}
-        .st-main{flex:1;min-width:0;}
-        .st-placeholder{display:flex;flex-direction:column;align-items:center;justify-content:center;height:300px;background:#fff;border-radius:12px;border:1px solid #e2e8f0;gap:12px;color:#9ca3af;}
-        .st-card{background:#fff;border-radius:12px;border:1px solid #e2e8f0;overflow:hidden;}
-        .st-card-header{display:flex;align-items:center;justify-content:space-between;padding:20px 24px;border-bottom:1px solid #f0f7ff;gap:16px;}
-        .st-card-title{font-size:1.1rem;font-weight:700;color:#1a1a2e;}
-        .st-card-desc{font-size:0.82rem;color:#64748b;margin-top:4px;}
-        .st-rec-header{display:flex;align-items:center;gap:10px;padding:12px 24px;background:#f8fbff;border-bottom:1px solid #f0f7ff;}
-        .st-rec-title{font-size:0.88rem;font-weight:700;}
-        .st-rec-item{border-bottom:1px solid #f0f7ff;}
-        .st-rec-item:last-child{border-bottom:none;}
-        .st-rec-row{display:flex;align-items:center;gap:12px;padding:14px 20px;}
-        .st-rec-icon{width:26px;height:26px;color:#0065b1;flex-shrink:0;}
-        .st-rec-info{flex:1;min-width:0;}
-        .st-rec-name{font-size:0.85rem;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block;}
-        .st-rec-meta{display:flex;gap:12px;margin-top:3px;flex-wrap:wrap;}
-        .st-rec-meta span{font-size:0.73rem;color:#9ca3af;}
-        .st-rec-actions{display:flex;gap:8px;flex-shrink:0;}
-        .st-rec-player{padding:0 20px 16px;}
-        .st-rec-player video{width:100%;max-height:380px;border-radius:8px;background:#000;display:block;}
-        .st-footer{background:#fff;border-top:1px solid #e2e8f0;padding:20px 32px;text-align:center;display:flex;flex-direction:column;gap:3px;margin-top:auto;}
-        .st-footer p{font-size:0.78rem;color:#6b7280;}
-        .st-footer-strong{font-size:0.88rem;font-weight:700;color:#0065b1!important;}
-        .st-footer-copy{font-size:0.72rem;color:#9ca3af!important;}
-        @media(max-width:768px){.st-layout{flex-direction:column;padding:16px;}.st-sidebar{width:100%;}}
+        @keyframes st-spin { to { transform: rotate(360deg) } }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        ::-webkit-scrollbar { width: 5px; height: 5px; }
+        ::-webkit-scrollbar-track { background: #f8fafd; }
+        ::-webkit-scrollbar-thumb { background: #d1e4f5; border-radius: 3px; }
       `}</style>
     </div>
   )
