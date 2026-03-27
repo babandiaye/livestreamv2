@@ -58,8 +58,6 @@ services:
 ```bash
 cd /opt/livekit
 docker compose up -d
-
-# Vérifier que tous les services sont up
 docker compose ps
 ```
 
@@ -93,14 +91,9 @@ cp .env.example .env
 nano .env
 ```
 
-Renseigner toutes les variables (voir `.env.example` ci-dessous).
-
 ### 4. Initialiser la base de données
 ```bash
-# Appliquer les migrations Prisma
 pnpm prisma migrate deploy
-
-# Générer le client Prisma
 pnpm prisma generate
 ```
 
@@ -142,8 +135,6 @@ systemctl start livestream
 ---
 
 ## Variables d'environnement (.env)
-
-Créer un fichier `.env` à la racine du projet. **Ne jamais committer ce fichier.**
 ```env
 # ── Application ──────────────────────────────────────
 NEXT_PUBLIC_SITE_URL=https://<votre-domaine>
@@ -152,6 +143,7 @@ AUTH_TRUST_HOST=true
 
 # ── LiveKit ──────────────────────────────────────────
 LIVEKIT_WS_URL=wss://<livekit-domain>
+NEXT_PUBLIC_LIVEKIT_URL=wss://<livekit-domain>
 LIVEKIT_API_KEY=<votre-api-key>
 LIVEKIT_API_SECRET=<votre-api-secret>
 
@@ -183,7 +175,8 @@ MOODLE_API_KEY=<cle-api-sans-caracteres-speciaux>
 WATCH_PUBLIC=true
 ```
 
-> **Note** : La clé `MOODLE_API_KEY` ne doit pas contenir de caractères spéciaux (`#`, `$`, `!`, etc.) pour éviter les problèmes d'interprétation shell.
+> **Note** : `NEXT_PUBLIC_LIVEKIT_URL` est requis pour la page `/egress-layout` (enregistrement composite).
+> La clé `MOODLE_API_KEY` ne doit pas contenir de caractères spéciaux (`#`, `$`, `!`, etc.).
 
 ---
 
@@ -192,67 +185,35 @@ WATCH_PUBLIC=true
 ### Déployer une mise à jour
 ```bash
 cd /var/www/html/livestreamv2
-
-# 1. Récupérer les dernières modifications
 git pull origin main
-
-# 2. Installer les nouvelles dépendances si nécessaire
 pnpm install
-
-# 3. Appliquer les migrations Prisma si nécessaire
 pnpm prisma migrate deploy
-
-# 4. Rebuilder l'application
 pnpm build
-
-# 5. Redémarrer le service
 service livestream restart
 ```
 
 ### Vérifier les logs
 ```bash
-# Logs applicatifs (webhooks, enregistrements, etc.)
 tail -f /var/log/livestream_outpout.log
-
-# Logs d'erreur
 tail -f /var/log/livestream_error.log
-
-# Statut du service systemd
 systemctl status livestream
-
-# Logs Egress LiveKit
 docker logs livekit_egress -f
 ```
 
 ### Gérer le service
 ```bash
-# Redémarrer
 service livestream restart
-
-# Arrêter
 service livestream stop
-
-# Démarrer
 service livestream start
 ```
 
 ### Gérer la stack Docker LiveKit
 ```bash
 cd /opt/livekit
-
-# Démarrer
 docker compose up -d
-
-# Arrêter
 docker compose down
-
-# Redémarrer un service
 docker compose restart egress
-
-# Voir les logs Egress
 docker compose logs egress -f
-
-# Statut de tous les services
 docker compose ps
 ```
 
@@ -265,38 +226,24 @@ docker exec -it livekit_postgresql psql -U <user> -d <database> -h 127.0.0.1
 docker exec livekit_postgresql psql -U <user> -d <database> -h 127.0.0.1 \
   -c "SELECT id, \"roomName\", status, \"createdAt\" FROM \"Session\" ORDER BY \"createdAt\" DESC LIMIT 10;"
 
-# Lister les utilisateurs
+# Lister les enregistrements avec statut
 docker exec livekit_postgresql psql -U <user> -d <database> -h 127.0.0.1 \
-  -c "SELECT id, email, name, role FROM \"User\" ORDER BY \"createdAt\" DESC LIMIT 10;"
-
-# Voir les enrollments d'une salle
-docker exec livekit_postgresql psql -U <user> -d <database> -h 127.0.0.1 \
-  -c "SELECT e.id, u.email, e.\"sessionId\", e.\"createdBy\" FROM \"Enrollment\" e JOIN \"User\" u ON u.id = e.\"userId\" WHERE e.\"sessionId\" = '<session-id>';"
+  -c "SELECT filename, status, \"startedAt\", \"createdAt\" FROM \"Recording\" ORDER BY \"createdAt\" DESC LIMIT 10;"
 
 # Forcer le statut ENDED d'une session
 docker exec livekit_postgresql psql -U <user> -d <database> -h 127.0.0.1 \
   -c "UPDATE \"Session\" SET status = 'ENDED', \"endedAt\" = NOW() WHERE \"roomName\" = '<room-name>';"
 
-# Supprimer tous les enrollments d'une salle (pour tests)
+# Corriger les anciens enregistrements PROCESSING sans fichier réel
 docker exec livekit_postgresql psql -U <user> -d <database> -h 127.0.0.1 \
-  -c "DELETE FROM \"Enrollment\" WHERE \"sessionId\" = '<session-id>';"
+  -c "UPDATE \"Recording\" SET status = 'READY' WHERE status = 'PROCESSING' AND filename != 'Enregistrement en cours…';"
 ```
 
 ### Prisma (migrations)
 ```bash
-cd /var/www/html/livestreamv2
-
-# Appliquer les migrations en production
 pnpm prisma migrate deploy
-
-# Voir le statut des migrations
 pnpm prisma migrate status
-
-# Régénérer le client Prisma
 pnpm prisma generate
-
-# Ouvrir Prisma Studio (développement uniquement)
-pnpm prisma studio
 ```
 
 ---
@@ -305,16 +252,13 @@ pnpm prisma studio
 
 ### Installation
 ```bash
-# Sur le serveur Moodle
 cp -r mod_livestream /var/www/html/<moodle>/mod/livestream/
 chown -R www-data:www-data /var/www/html/<moodle>/mod/livestream/
 ```
 
-Puis aller dans **Administration Moodle → Notifications** pour finaliser l'installation.
+Puis **Administration Moodle → Notifications** pour finaliser.
 
 ### Configuration admin Moodle
-
-Aller dans **Administration → Plugins → Modules d'activité → LiveStream** :
 
 | Paramètre | Valeur |
 |-----------|--------|
@@ -339,6 +283,33 @@ Toutes les routes nécessitent le header `X-Api-Key: <MOODLE_API_KEY>`.
 
 ---
 
+## Enregistrement composite (Egress layout custom)
+
+Depuis la v4.3.0, l'enregistrement capture en une seule vidéo MP4 :
+- **Partage d'écran** au centre (contenu principal)
+- **Caméra animateur** en PiP bas droite
+- **Chat en direct** dans un panneau latéral
+- **Audio** de tous les participants sur scène
+
+Le flux technique :
+```
+Bouton "Enregistrer" → start_recording API
+  → startWebEgress(url=/egress-layout?roomName=xxx)
+  → Egress Chrome charge la page
+  → /api/egress-token génère un token viewer caché
+  → La page se connecte à la room LiveKit
+  → Enregistrement MP4 → MinIO S3
+```
+
+Statuts de l'enregistrement :
+| Statut | Description |
+|--------|-------------|
+| `PROCESSING` | Enregistrement en cours — badge ⏳ jaune |
+| `READY` | Fichier disponible — boutons Voir/Télécharger actifs |
+| `FAILED` | Échec Egress — badge ✗ rouge |
+
+---
+
 ## Architecture
 ```
 ┌─────────────────────────────────────────────────────┐
@@ -349,6 +320,7 @@ Toutes les routes nécessitent le header `X-Api-Key: <MOODLE_API_KEY>`.
 ┌────────────────────▼────────────────────────────────┐
 │           LiveStreamV2 (Next.js 15)                 │
 │  /host  /watch  /admin  /moderator  /student        │
+│  /egress-layout  (composite recording page)         │
 │              API Routes Next.js                     │
 └──────┬──────────────┬──────────────┬────────────────┘
        │              │              │
@@ -370,16 +342,13 @@ Toutes les routes nécessitent le header `X-Api-Key: <MOODLE_API_KEY>`.
 
 | Rôle | Redirection | Accès |
 |------|-------------|-------|
-| `ADMIN` | `/dashboard` | Gestion complète — salles, utilisateurs, enregistrements |
+| `ADMIN` | `/admin` | Gestion complète — salles, utilisateurs, enregistrements |
 | `MODERATOR` | `/moderator` | Ses salles, enrôlement CSV/individuel, enregistrements |
 | `VIEWER` | `/student` | Sessions auxquelles il est enrôlé |
 
 ---
 
 ## Enrôlement CSV
-
-Le modèle CSV est téléchargeable depuis l'interface :
-**Import CSV → Télécharger le modèle**
 
 Format accepté :
 ```csv
@@ -388,9 +357,10 @@ etudiant@domaine.sn,Prénom,Nom
 ```
 
 - Séparateur `,` ou `;`
-- Colonnes : `email` obligatoire, `prenom` et `nom` optionnels
-- Les utilisateurs inexistants sont **créés automatiquement**
-- Traitement par batch de 500 — supporte jusqu'à 10 000 utilisateurs
+- Colonne `email` obligatoire, `prenom` et `nom` optionnels
+- Utilisateurs inexistants créés automatiquement
+- Batch de 500 — supporte jusqu'à 10 000 utilisateurs
+- Pagination par lot de 50 dans les interfaces
 
 ---
 
@@ -401,6 +371,10 @@ etudiant@domaine.sn,Prénom,Nom
 | v1.0.0 | MVP — LiveKit + auth Keycloak |
 | v2.0.0 | Enrôlement, enregistrements S3, dashboard admin |
 | v3.0.0 | Plugin Moodle + fix Egress + CSV + statut session + kick |
+| v4.0.0 | Redesign sidebar UN-CHK + pagination 50 |
+| v4.1.0 | Page /watch redesign + logo + responsive mobile |
+| v4.2.0 | Statut enregistrement PROCESSING/READY/FAILED |
+| v4.3.0 | Egress layout custom cam+chat+écran + webhook web egress |
 
 ---
 
