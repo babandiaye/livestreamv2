@@ -38,6 +38,7 @@ export default function StudentClient({
   user: { name?: string | null; email?: string | null }
 }) {
   const [rooms, setRooms] = useState<Room[]>([])
+  const [sidebarOpen, setSidebarOpen] = useState(false)
   const [loading, setLoading] = useState(true)
   const [selectedRoom, setSelectedRoom] = useState<Room | null>(null)
   const [playingKey, setPlayingKey] = useState<string | null>(null)
@@ -85,10 +86,13 @@ export default function StudentClient({
   const liveRooms = rooms.filter(r => r.status === "LIVE")
 
   return (
-    <div style={{ display: "flex", height: "100vh", fontFamily: "'Google Sans','Segoe UI',system-ui,sans-serif", color: "#1a1a2e", background: "#f8fafd" }}>
+    <div style={{ display: "flex", height: "100vh", fontFamily: "'Google Sans','Segoe UI',system-ui,sans-serif", color: "#1a1a2e", background: "#f8fafd", position: "relative" }}>
 
+      {sidebarOpen && (
+        <div onClick={() => setSidebarOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.4)", zIndex: 40 }} />
+      )}
       {/* ── SIDEBAR ── */}
-      <div style={{ width: 210, flexShrink: 0, background: "white", borderRight: "1px solid #e2e8f0", display: "flex", flexDirection: "column" }}>
+      <div style={{ width: 210, flexShrink: 0, background: "white", borderRight: "1px solid #e2e8f0", display: "flex", flexDirection: "column", position: "fixed", top: 0, left: 0, bottom: 0, zIndex: 50, transition: "transform .25s ease" }} className={`st-sidebar-mobile${sidebarOpen ? " open" : ""}`}>
         {/* Logo */}
         <div style={{ padding: "16px 14px 12px", borderBottom: "1px solid #f0f7ff", display: "flex", alignItems: "center", gap: 8 }}>
           <div style={{ width: 30, height: 30, borderRadius: 7, background: "#0065b1", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
@@ -158,10 +162,13 @@ export default function StudentClient({
       </div>
 
       {/* ── MAIN ── */}
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", marginLeft: "210px" }} className="st-main-content">
 
         {/* Header */}
-        <div style={{ padding: "0 24px", height: 60, background: "white", borderBottom: "1px solid #e2e8f0", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
+        <div style={{ padding: "0 16px", height: 60, background: "white", borderBottom: "1px solid #e2e8f0", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
+          <button onClick={() => setSidebarOpen(true)} className="st-hamburger" style={{ background: "none", border: "none", cursor: "pointer", padding: 6, borderRadius: 6, display: "none", marginRight: 8 }}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#374151" strokeWidth="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+          </button>
           <div>
             <div style={{ fontSize: 15, fontWeight: 600, color: "#1a1a2e" }}>
               {selectedRoom ? selectedRoom.title : "Mes webinaires"}
@@ -302,6 +309,16 @@ export default function StudentClient({
         ::-webkit-scrollbar { width: 5px; height: 5px; }
         ::-webkit-scrollbar-track { background: #f8fafd; }
         ::-webkit-scrollbar-thumb { background: #d1e4f5; border-radius: 3px; }
+        @media (max-width: 768px) {
+          .st-sidebar-mobile { transform: translateX(-100%); }
+          .st-sidebar-mobile.open { transform: translateX(0); }
+          .st-hamburger { display: flex !important; }
+          .st-main-content { margin-left: 0 !important; }
+        }
+        @media (min-width: 769px) {
+          .st-sidebar-mobile { transform: translateX(0) !important; position: relative !important; }
+          .st-main-content { margin-left: 0 !important; }
+        }
       `}</style>
     </div>
   )

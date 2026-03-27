@@ -242,6 +242,7 @@ function EnrollPanel({ sessionId, sessionTitle }: { sessionId: string; sessionTi
 // ── Page principale ──
 export default function AdminClient({ user }: { user: { name?: string | null; email?: string | null; role: string } }) {
   const [nav, setNav] = useState<"rooms" | "users" | "recordings">("rooms")
+  const [sidebarOpen, setSidebarOpen] = useState(false)
   const [users, setUsers] = useState<User[]>([])
   const [rooms, setRooms] = useState<Room[]>([])
   const [recordings, setRecordings] = useState<Recording[]>([])
@@ -270,6 +271,31 @@ export default function AdminClient({ user }: { user: { name?: string | null; em
     await fetchUsers(); setUpdatingRole(null)
   }
 
+  const startMeeting = async (room: Room) => {
+    const res = await fetch("/api/create_stream", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        room_name: room.roomName,
+        metadata: { creator_identity: user.name ?? user.email ?? "Admin", enable_chat: true, allow_participation: false },
+      }),
+    })
+    if (!res.ok) { alert("Erreur démarrage"); return }
+    const data = await res.json()
+    window.location.href = `/host?at=${data.auth_token}&rt=${data.connection_details.token}`
+  }
+
+  const deleteRoom = async (id: string) => {
+    if (!confirm("Supprimer cette salle ?")) return
+    await fetch(`/api/rooms/${id}`, { method: "DELETE" })
+    await fetchRooms()
+    setSelectedRoom(null)
+  }
+
+  const copyLink = (roomName: string) => {
+    navigator.clipboard.writeText(`${window.location.origin}/watch/${roomName}`)
+    alert("Lien copié !")
+  }
+
   const deleteRecording = async (id: string, filename: string) => {
     if (!confirm(`Supprimer "${filename}" ?`)) return
     setDeletingRec(id)
@@ -292,10 +318,15 @@ export default function AdminClient({ user }: { user: { name?: string | null; em
   ]
 
   return (
-    <div style={{ display: "flex", height: "100vh", fontFamily: "'Google Sans','Segoe UI',system-ui,sans-serif", color: "#1a1a2e", background: "#f8fafd" }}>
+    <div style={{ display: "flex", height: "100vh", fontFamily: "'Google Sans','Segoe UI',system-ui,sans-serif", color: "#1a1a2e", background: "#f8fafd", position: "relative" }}>
+
+      {/* ── OVERLAY mobile ── */}
+      {sidebarOpen && (
+        <div onClick={() => setSidebarOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.4)", zIndex: 40 }} />
+      )}
 
       {/* ── SIDEBAR ── */}
-      <div style={{ width: 210, flexShrink: 0, background: "white", borderRight: "1px solid #e2e8f0", display: "flex", flexDirection: "column" }}>
+      <div style={{ width: 210, flexShrink: 0, background: "white", borderRight: "1px solid #e2e8f0", display: "flex", flexDirection: "column", position: "fixed", top: 0, left: 0, bottom: 0, zIndex: 50, transform: sidebarOpen ? "translateX(0)" : "translateX(-100%)", transition: "transform .25s ease" }} className="adm-sidebar-mobile">
         {/* Logo */}
         <div style={{ padding: "16px 14px 12px", borderBottom: "1px solid #f0f7ff", display: "flex", alignItems: "center", gap: 8 }}>
           <div style={{ width: 30, height: 30, borderRadius: 7, background: "#0065b1", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
@@ -351,10 +382,14 @@ export default function AdminClient({ user }: { user: { name?: string | null; em
       </div>
 
       {/* ── MAIN ── */}
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", marginLeft: "210px" }} className="adm-main-content">
 
         {/* Header contextuel */}
-        <div style={{ padding: "0 24px", height: 60, background: "white", borderBottom: "1px solid #e2e8f0", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
+        <div style={{ padding: "0 16px", height: 60, background: "white", borderBottom: "1px solid #e2e8f0", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
+          {/* Bouton hamburger mobile */}
+          <button onClick={() => setSidebarOpen(true)} className="adm-hamburger" style={{ background: "none", border: "none", cursor: "pointer", padding: 6, borderRadius: 6, display: "none", marginRight: 8 }}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#374151" strokeWidth="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+          </button>
           <div>
             <div style={{ fontSize: 14, fontWeight: 600, color: "#1a1a2e" }}>
               {nav === "rooms" ? "Salles" : nav === "users" ? "Utilisateurs" : "Enregistrements"}
@@ -430,10 +465,22 @@ export default function AdminClient({ user }: { user: { name?: string | null; em
                           <div style={{ fontSize: 14, fontWeight: 600, color: "#1a1a2e" }}>{selectedRoom.title}</div>
                           <div style={{ fontSize: 13, color: "#9ca3af", marginTop: 2 }}>Créé par {selectedRoom.creator.name}</div>
                         </div>
-                        <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
-                          <span style={{ padding: "3px 10px", borderRadius: 20, fontSize: 14, fontWeight: 600, background: selectedRoom.status === "LIVE" ? "#dcfce7" : "#f1f5f9", color: selectedRoom.status === "LIVE" ? "#166534" : "#6b7280" }}>
+                        <div style={{ display: "flex", gap: 8, flexShrink: 0, flexWrap: "wrap" }}>
+                          <span style={{ padding: "3px 10px", borderRadius: 20, fontSize: 13, fontWeight: 600, background: selectedRoom.status === "LIVE" ? "#dcfce7" : "#f1f5f9", color: selectedRoom.status === "LIVE" ? "#166534" : "#6b7280" }}>
                             {selectedRoom.status === "LIVE" ? "● En direct" : selectedRoom.status === "ENDED" ? "Terminée" : "Planifiée"}
                           </span>
+                          <button onClick={() => copyLink(selectedRoom.roomName)}
+                            style={{ padding: "5px 12px", background: "white", color: "#0065b1", border: "1px solid #0065b1", borderRadius: 7, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
+                            Copier le lien
+                          </button>
+                          <button onClick={() => startMeeting(selectedRoom)}
+                            style={{ padding: "5px 14px", background: "#0065b1", color: "white", border: "none", borderRadius: 7, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
+                            ▶ Démarrer
+                          </button>
+                          <button onClick={() => deleteRoom(selectedRoom.id)}
+                            style={{ padding: "5px 12px", background: "white", color: "#e53e3e", border: "1px solid #e53e3e", borderRadius: 7, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
+                            Supprimer
+                          </button>
                         </div>
                       </div>
                       <EnrollPanel sessionId={selectedRoom.id} sessionTitle={selectedRoom.title} />
@@ -583,6 +630,16 @@ export default function AdminClient({ user }: { user: { name?: string | null; em
         ::-webkit-scrollbar { width: 5px; height: 5px; }
         ::-webkit-scrollbar-track { background: #f8fafd; }
         ::-webkit-scrollbar-thumb { background: #d1e4f5; border-radius: 3px; }
+        @media (max-width: 768px) {
+          .adm-sidebar-mobile { transform: translateX(-100%) !important; }
+          .adm-sidebar-mobile.open { transform: translateX(0) !important; }
+          .adm-hamburger { display: flex !important; }
+          .adm-main-content { margin-left: 0 !important; }
+        }
+        @media (min-width: 769px) {
+          .adm-sidebar-mobile { transform: translateX(0) !important; position: relative !important; }
+          .adm-main-content { margin-left: 0 !important; }
+        }
       `}</style>
     </div>
   )
