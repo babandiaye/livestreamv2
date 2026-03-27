@@ -1,62 +1,69 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
-import Image from "next/image"
 import { signOut } from "next-auth/react"
 
 type Room = {
-  id: string
-  roomName: string
-  title: string
-  description: string | null
-  status: string
-  chatEnabled: boolean
-  participationEnabled: boolean
-  createdAt: string
-  updatedAt: string
-  recordings: number
-  enrollments: number
+  id: string; roomName: string; title: string; description: string | null
+  status: string; chatEnabled: boolean; participationEnabled: boolean
+  createdAt: string; updatedAt: string; recordings: number; enrollments: number
 }
-
 type Recording = {
-  id: string
-  filename: string
-  s3Key: string
-  duration: number | null
-  size: number | null
-  createdAt: string
+  id: string; filename: string; s3Key: string; duration: number | null
+  size: number | null; createdAt: string
   session: { id: string; title: string; roomName: string; creator: { name: string; email: string } }
 }
-
 type EnrolledUser = { id: string; userId: string; name: string; email: string; role: string; enrolledAt: string }
 type SearchUser = { id: string; name: string; email: string; role: string }
 type ImportResult = { summary: { total: number; created: number; enrolled: number; skipped: number }; skipped: string[] }
+type User = { id: string; name?: string | null; email?: string | null; role: string }
 
-type User = {
-  id: string
-  name?: string | null
-  email?: string | null
-  role: string
-}
+const PAGE_SIZE = 50
 
 function formatDuration(seconds: number | null) {
   if (!seconds) return ""
-  const h = Math.floor(seconds / 3600)
-  const m = Math.floor((seconds % 3600) / 60)
-  const s = seconds % 60
+  const h = Math.floor(seconds / 3600), m = Math.floor((seconds % 3600) / 60), s = seconds % 60
   return h > 0 ? `${h}h${m.toString().padStart(2, "0")}m` : `${m}:${s.toString().padStart(2, "0")}`
 }
-
 function formatSize(b: number) {
   if (!b) return "—"
   if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} Ko`
   if (b < 1024 ** 3) return `${(b / (1024 * 1024)).toFixed(1)} Mo`
   return `${(b / 1024 ** 3).toFixed(2)} Go`
 }
+function initials(name: string) {
+  return (name || "?").split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2)
+}
+function Avatar({ name, color = "#0065b1", size = 30 }: { name: string; color?: string; size?: number }) {
+  return (
+    <div style={{ width: size, height: size, borderRadius: "50%", background: color, display: "flex", alignItems: "center", justifyContent: "center", fontSize: size * 0.38, fontWeight: 600, color: "white", flexShrink: 0 }}>
+      {initials(name)}
+    </div>
+  )
+}
+function Pagination({ total, page, onPage }: { total: number; page: number; onPage: (p: number) => void }) {
+  const pages = Math.ceil(total / PAGE_SIZE)
+  if (pages <= 1) return null
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 16px", borderTop: "1px solid #f0f7ff", background: "#f8fbff" }}>
+      <span style={{ fontSize: 13, color: "#6b7280" }}>{(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, total)} sur {total}</span>
+      <div style={{ display: "flex", gap: 4 }}>
+        <button onClick={() => onPage(page - 1)} disabled={page === 1} style={{ padding: "4px 10px", border: "1px solid #e2e8f0", borderRadius: 6, background: "white", cursor: page === 1 ? "not-allowed" : "pointer", opacity: page === 1 ? .4 : 1, fontSize: 13 }}>←</button>
+        {Array.from({ length: pages }, (_, i) => i + 1).filter(p => p === 1 || p === pages || Math.abs(p - page) <= 1).map((p, i, arr) => (
+          <span key={p}>
+            {i > 0 && arr[i - 1] !== p - 1 && <span style={{ padding: "4px 6px", fontSize: 13, color: "#9ca3af" }}>…</span>}
+            <button onClick={() => onPage(p)} style={{ padding: "4px 10px", border: "1px solid", borderColor: p === page ? "#0065b1" : "#e2e8f0", borderRadius: 6, background: p === page ? "#0065b1" : "white", color: p === page ? "white" : "#374151", cursor: "pointer", fontSize: 13, fontWeight: p === page ? 600 : 400 }}>{p}</button>
+          </span>
+        ))}
+        <button onClick={() => onPage(page + 1)} disabled={page === pages} style={{ padding: "4px 10px", border: "1px solid #e2e8f0", borderRadius: 6, background: "white", cursor: page === pages ? "not-allowed" : "pointer", opacity: page === pages ? .4 : 1, fontSize: 13 }}>→</button>
+      </div>
+    </div>
+  )
+}
 
 // ── EnrollPanel ──
-function EnrollPanel({ sessionId, sessionTitle }: { sessionId: string; sessionTitle: string }) {
-  const [subTab, setSubTab] = useState<"manual" | "csv">("manual")
+function EnrollPanel({ sessionId }: { sessionId: string }) {
+  const [subTab, setSubTab] = useState<"manual" | "csv" | "list">("list")
   const [enrolled, setEnrolled] = useState<EnrolledUser[]>([])
   const [query, setQuery] = useState("")
   const [results, setResults] = useState<SearchUser[]>([])
@@ -64,6 +71,7 @@ function EnrollPanel({ sessionId, sessionTitle }: { sessionId: string; sessionTi
   const [adding, setAdding] = useState<string | null>(null)
   const [removing, setRemoving] = useState<string | null>(null)
   const [loadingList, setLoadingList] = useState(true)
+  const [enrollPage, setEnrollPage] = useState(1)
   const [csvFile, setCsvFile] = useState<File | null>(null)
   const [csvDrag, setCsvDrag] = useState(false)
   const [csvLoading, setCsvLoading] = useState(false)
@@ -73,8 +81,7 @@ function EnrollPanel({ sessionId, sessionTitle }: { sessionId: string; sessionTi
   const fetchEnrolled = useCallback(async () => {
     setLoadingList(true)
     const d = await (await fetch(`/api/admin/rooms/${sessionId}/enroll`)).json()
-    setEnrolled(d.enrollments ?? [])
-    setLoadingList(false)
+    setEnrolled(d.enrollments ?? []); setEnrollPage(1); setLoadingList(false)
   }, [sessionId])
 
   useEffect(() => { fetchEnrolled() }, [fetchEnrolled])
@@ -93,23 +100,14 @@ function EnrollPanel({ sessionId, sessionTitle }: { sessionId: string; sessionTi
 
   const enroll = async (userId: string) => {
     setAdding(userId)
-    await fetch(`/api/admin/rooms/${sessionId}/enroll`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId }),
-    })
-    setQuery(""); setResults([])
-    await fetchEnrolled(); setAdding(null)
+    await fetch(`/api/admin/rooms/${sessionId}/enroll`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId }) })
+    setQuery(""); setResults([]); await fetchEnrolled(); setAdding(null)
   }
-
   const unenroll = async (userId: string) => {
     setRemoving(userId)
-    await fetch(`/api/admin/rooms/${sessionId}/enroll`, {
-      method: "DELETE", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId }),
-    })
+    await fetch(`/api/admin/rooms/${sessionId}/enroll`, { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId }) })
     await fetchEnrolled(); setRemoving(null)
   }
-
   const submitCsv = async () => {
     if (!csvFile) return
     setCsvLoading(true); setCsvError(null); setCsvResult(null)
@@ -123,143 +121,149 @@ function EnrollPanel({ sessionId, sessionTitle }: { sessionId: string; sessionTi
     setCsvLoading(false)
   }
 
+  const pagedEnrolled = enrolled.slice((enrollPage - 1) * PAGE_SIZE, enrollPage * PAGE_SIZE)
+
+  const tabStyle = (t: string) => ({
+    padding: "10px 16px", background: "none", border: "none",
+    borderBottom: `2px solid ${subTab === t ? "#0065b1" : "transparent"}`,
+    color: subTab === t ? "#0065b1" : "#9ca3af",
+    fontSize: 14, fontWeight: subTab === t ? 600 : 400, cursor: "pointer", fontFamily: "inherit"
+  })
+
   return (
-    <div className="ep-root">
-      <div className="ep-header">
-        <span className="ep-title">{sessionTitle}</span>
-        <div className="ep-tabs">
-          <button className={`ep-tab${subTab === "manual" ? " active" : ""}`} onClick={() => setSubTab("manual")}>Individuel</button>
-          <button className={`ep-tab${subTab === "csv" ? " active" : ""}`} onClick={() => setSubTab("csv")}>Import CSV</button>
-        </div>
+    <div style={{ display: "flex", flexDirection: "column" }}>
+      {/* Tabs */}
+      <div style={{ display: "flex", borderBottom: "1px solid #f0f7ff", padding: "0 16px" }}>
+        <button style={tabStyle("list")} onClick={() => setSubTab("list")}>
+          Participants <span style={{ background: "#e8f4ff", color: "#0065b1", fontSize: 12, padding: "1px 6px", borderRadius: 10, marginLeft: 4 }}>{enrolled.length}</span>
+        </button>
+        <button style={tabStyle("manual")} onClick={() => setSubTab("manual")}>Ajouter</button>
+        <button style={tabStyle("csv")} onClick={() => setSubTab("csv")}>Import CSV</button>
       </div>
 
-      {subTab === "manual" && (
+      {/* Liste participants */}
+      {subTab === "list" && (
         <>
-          <div className="ep-search">
-            <input className="ep-input" placeholder="Rechercher un utilisateur…" value={query} onChange={e => setQuery(e.target.value)} />
-            {searching && <span className="ep-spinner" />}
+          {loadingList
+            ? <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "20px 16px", color: "#9ca3af", fontSize: 14 }}><span style={{ width: 14, height: 14, border: "2px solid #e2e8f0", borderTopColor: "#0065b1", borderRadius: "50%", animation: "mod-spin .7s linear infinite", display: "inline-block" }} />Chargement…</div>
+            : enrolled.length === 0
+              ? <div style={{ padding: "30px 16px", textAlign: "center", color: "#9ca3af", fontSize: 14 }}>Aucun participant enrôlé</div>
+              : (
+                <>
+                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                    <thead>
+                      <tr style={{ background: "#f8fbff" }}>
+                        {["Participant", "Email", "Enrôlé le", ""].map(h => (
+                          <th key={h} style={{ padding: "9px 16px", textAlign: "left", fontSize: 13, fontWeight: 600, color: "#6b7280", borderBottom: "1px solid #f0f7ff" }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pagedEnrolled.map(u => (
+                        <tr key={u.id} style={{ borderBottom: "1px solid #f0f7ff" }}>
+                          <td style={{ padding: "10px 16px" }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                              <Avatar name={u.name} size={28} />
+                              <span style={{ fontSize: 14, fontWeight: 500, color: "#1a1a2e" }}>{u.name}</span>
+                            </div>
+                          </td>
+                          <td style={{ padding: "10px 16px", fontSize: 13, color: "#6b7280" }}>{u.email}</td>
+                          <td style={{ padding: "10px 16px", fontSize: 13, color: "#9ca3af" }}>{new Date(u.enrolledAt).toLocaleDateString("fr-FR")}</td>
+                          <td style={{ padding: "10px 16px" }}>
+                            <button disabled={removing === u.userId} onClick={() => unenroll(u.userId)}
+                              style={{ padding: "4px 12px", background: "white", color: "#e53e3e", border: "1px solid #e53e3e", borderRadius: 6, fontSize: 13, cursor: "pointer", fontFamily: "inherit", opacity: removing === u.userId ? .5 : 1 }}>
+                              {removing === u.userId ? "…" : "Retirer"}
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <Pagination total={enrolled.length} page={enrollPage} onPage={setEnrollPage} />
+                </>
+              )
+          }
+        </>
+      )}
+
+      {/* Ajouter manuellement */}
+      {subTab === "manual" && (
+        <div style={{ padding: "14px 16px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+            <input placeholder="Rechercher un utilisateur…" value={query} onChange={e => setQuery(e.target.value)}
+              style={{ flex: 1, padding: "8px 12px", border: "1px solid #e2e8f0", borderRadius: 8, fontSize: 14, fontFamily: "inherit", outline: "none", color: "#1a1a2e", background: "#f8fbff" }} />
+            {searching && <span style={{ width: 14, height: 14, border: "2px solid #d1e4f5", borderTopColor: "#0065b1", borderRadius: "50%", animation: "mod-spin .7s linear infinite", display: "inline-block", flexShrink: 0 }} />}
           </div>
           {results.length > 0 && (
-            <div className="ep-results">
+            <div style={{ background: "#f8fbff", border: "1px solid #e2e8f0", borderRadius: 8, overflow: "hidden" }}>
               {results.map(u => (
-                <div key={u.id} className="ep-row">
-                  <div className="ep-uinfo">
-                    <span className="ep-uname">{u.name}</span>
-                    <span className="ep-uemail">{u.email}</span>
+                <div key={u.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", borderBottom: "1px solid #f0f7ff" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <Avatar name={u.name} size={28} />
+                    <div><div style={{ fontSize: 14, fontWeight: 500, color: "#1a1a2e" }}>{u.name}</div><div style={{ fontSize: 13, color: "#9ca3af" }}>{u.email}</div></div>
                   </div>
-                  <button className="mod-btn mod-btn-primary ep-sm" disabled={adding === u.id} onClick={() => enroll(u.id)}>
+                  <button disabled={adding === u.id} onClick={() => enroll(u.id)}
+                    style={{ padding: "5px 14px", background: "#0065b1", color: "white", border: "none", borderRadius: 7, fontSize: 13, cursor: "pointer", fontFamily: "inherit", opacity: adding === u.id ? .5 : 1 }}>
                     {adding === u.id ? "…" : "+ Ajouter"}
                   </button>
                 </div>
               ))}
             </div>
           )}
-        </>
+          {query.length >= 2 && results.length === 0 && !searching && (
+            <div style={{ padding: "20px 0", textAlign: "center", color: "#9ca3af", fontSize: 14 }}>Aucun utilisateur trouvé</div>
+          )}
+        </div>
       )}
 
+      {/* Import CSV */}
       {subTab === "csv" && !csvResult && (
-        <div className="ep-csv">
-          <div className="ep-csv-info-bar">
-            <div className="ep-csv-info">
-              Colonnes : <code>email</code> · <code>email,nom</code> · <code>email,prenom,nom</code> — séparateur <code>,</code> ou <code>;</code>
-              <br />Supporte jusqu&apos;à <strong>10 000 utilisateurs</strong> par import. Les utilisateurs inexistants sont créés automatiquement.
+        <div style={{ padding: "14px 16px", display: "flex", flexDirection: "column", gap: 12 }}>
+          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+            <div style={{ fontSize: 13, color: "#9ca3af", lineHeight: 1.6 }}>
+              Colonnes : <code style={{ background: "#e8f4ff", color: "#0065b1", padding: "1px 5px", borderRadius: 3, fontSize: 13 }}>email</code> · <code style={{ background: "#e8f4ff", color: "#0065b1", padding: "1px 5px", borderRadius: 3, fontSize: 13 }}>email,prenom,nom</code>
+              <br />Jusqu&apos;à <strong style={{ color: "#374151" }}>10 000 utilisateurs</strong>. Créés automatiquement si inexistants.
             </div>
-            <a href="/api/admin/enroll-csv-template" download className="ep-csv-dl">
-              ⬇ Télécharger le modèle
-            </a>
+            <a href="/api/admin/enroll-csv-template" download style={{ fontSize: 13, color: "#0065b1", textDecoration: "none", fontWeight: 600, padding: "5px 12px", border: "1px solid #0065b1", borderRadius: 7, whiteSpace: "nowrap" }}>⬇ Modèle CSV</a>
           </div>
           <div
-            className={`ep-dropzone${csvDrag ? " drag" : ""}${csvFile ? " ok" : ""}`}
+            onClick={() => document.getElementById("csv-input-mod")?.click()}
             onDragOver={e => { e.preventDefault(); setCsvDrag(true) }}
             onDragLeave={() => setCsvDrag(false)}
             onDrop={e => { e.preventDefault(); setCsvDrag(false); const f = e.dataTransfer.files[0]; if (f) setCsvFile(f) }}
-            onClick={() => document.getElementById("csv-input-mod")?.click()}>
+            style={{ border: `2px dashed ${csvDrag ? "#0065b1" : csvFile ? "#2fb344" : "#d1e4f5"}`, background: csvFile ? "#f0fdf4" : csvDrag ? "#f0f7ff" : "white", borderRadius: 10, padding: "24px", textAlign: "center", cursor: "pointer" }}>
             <input id="csv-input-mod" type="file" accept=".csv" style={{ display: "none" }} onChange={e => e.target.files?.[0] && setCsvFile(e.target.files[0])} />
             {csvFile
-              ? <span className="ep-fname">📄 {csvFile.name}</span>
-              : (
-                <div className="ep-dropzone-content">
-                  <div className="ep-dropzone-icon">📂</div>
-                  <span className="ep-hint">Glisser un fichier CSV ici ou cliquer pour sélectionner</span>
-                  <span className="ep-hint-sub">Format accepté : .csv — séparateur , ou ;</span>
-                </div>
-              )
+              ? <span style={{ fontSize: 14, fontWeight: 600, color: "#1a1a2e" }}>📄 {csvFile.name}</span>
+              : <div><div style={{ fontSize: 22, marginBottom: 6 }}>📂</div><span style={{ fontSize: 14, color: "#6b7280" }}>Glisser un fichier CSV ici ou cliquer</span></div>
             }
           </div>
-          {csvError && <div className="ep-csv-err">⚠️ {csvError}</div>}
-          {csvLoading && (
-            <div className="ep-progress-wrap">
-              <div className="ep-progress-bar">
-                <div className="ep-progress-fill" />
-              </div>
-              <span className="ep-progress-label">Import en cours, veuillez patienter…</span>
-            </div>
-          )}
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 4 }}>
-            {csvFile && !csvLoading && (
-              <button className="mod-btn mod-btn-outline" onClick={() => setCsvFile(null)}>Annuler</button>
-            )}
-            <button className="mod-btn mod-btn-primary" onClick={submitCsv} disabled={!csvFile || csvLoading}>
-              {csvLoading ? <><span className="ep-spinner" /> Import en cours…</> : "Importer"}
+          {csvError && <div style={{ fontSize: 13, color: "#b91c1c", background: "#fff0f0", border: "1px solid #fecaca", borderRadius: 7, padding: "8px 12px" }}>⚠️ {csvError}</div>}
+          {csvLoading && <div style={{ height: 5, background: "#e8f4ff", borderRadius: 3, overflow: "hidden" }}><div style={{ height: "100%", width: "40%", background: "#0065b1", borderRadius: 3, animation: "ep-progress 1.4s ease-in-out infinite" }} /></div>}
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+            {csvFile && !csvLoading && <button onClick={() => setCsvFile(null)} style={{ padding: "6px 14px", background: "white", border: "1px solid #e2e8f0", borderRadius: 7, fontSize: 14, cursor: "pointer", fontFamily: "inherit" }}>Annuler</button>}
+            <button onClick={submitCsv} disabled={!csvFile || csvLoading}
+              style={{ padding: "6px 16px", background: "#0065b1", color: "white", border: "none", borderRadius: 7, fontSize: 14, cursor: "pointer", fontFamily: "inherit", opacity: !csvFile || csvLoading ? .5 : 1 }}>
+              {csvLoading ? "Import en cours…" : "Importer"}
             </button>
           </div>
         </div>
       )}
 
       {subTab === "csv" && csvResult && (
-        <div className="ep-csv">
-          <div className="ep-csv-success-banner">
-            ✅ Import terminé avec succès
-          </div>
-          <div className="ep-csv-stats">
-            {[
-              { v: csvResult.summary.total,    l: "lus",          c: "total" },
-              { v: csvResult.summary.created,  l: "créés",        c: "new"   },
-              { v: csvResult.summary.enrolled, l: "enrôlés",      c: "ok"    },
-              { v: csvResult.summary.skipped,  l: "déjà enrôlés", c: "skip"  },
-            ].map(s => (
-              <div key={s.l} className={`ep-stat ep-stat-${s.c}`}>
-                <span className="ep-sv">{s.v}</span>
-                <span className="ep-sl">{s.l}</span>
+        <div style={{ padding: "14px 16px", display: "flex", flexDirection: "column", gap: 12 }}>
+          <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 8, padding: "10px 14px", fontSize: 14, fontWeight: 600, color: "#2fb344" }}>✅ Import terminé avec succès</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10 }}>
+            {[{ v: csvResult.summary.total, l: "lus", bg: "#f8fbff", c: "#0065b1" }, { v: csvResult.summary.created, l: "créés", bg: "#eff6ff", c: "#3b82f6" }, { v: csvResult.summary.enrolled, l: "enrôlés", bg: "#f0fdf4", c: "#2fb344" }, { v: csvResult.summary.skipped, l: "déjà enrôlés", bg: "#fffbeb", c: "#d97706" }].map(s => (
+              <div key={s.l} style={{ background: s.bg, borderRadius: 8, padding: "12px 8px", display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+                <span style={{ fontSize: 22, fontWeight: 600, color: s.c }}>{s.v}</span>
+                <span style={{ fontSize: 12, fontWeight: 600, color: s.c }}>{s.l}</span>
               </div>
             ))}
           </div>
-          {csvResult.skipped.length > 0 && (
-            <div className="ep-csv-detail" style={{ marginTop: 8 }}>
-              <div className="ep-csv-dl-title" style={{ color: "#d97706" }}>
-                ℹ️ Déjà enrôlés ({csvResult.summary.skipped} au total)
-                {csvResult.summary.skipped > 100 && <span className="ep-csv-dl-note"> — affichage limité aux 100 premiers</span>}
-              </div>
-              <div className="ep-chips">{csvResult.skipped.map(e => <span key={e} className="ep-chip ep-chip-skip">{e}</span>)}</div>
-            </div>
-          )}
-          <button className="mod-btn mod-btn-outline" style={{ marginTop: 8 }} onClick={() => { setCsvResult(null); setCsvFile(null) }}>
-            ↩ Nouvel import
-          </button>
+          <button onClick={() => { setCsvResult(null); setCsvFile(null) }} style={{ padding: "6px 14px", background: "white", border: "1px solid #e2e8f0", borderRadius: 7, fontSize: 14, cursor: "pointer", fontFamily: "inherit", alignSelf: "flex-start" }}>↩ Nouvel import</button>
         </div>
       )}
-
-      <div className="ep-list-header">
-        <span>Utilisateurs enrôlés</span>
-        <span className="mod-count">{enrolled.length}</span>
-      </div>
-      {loadingList
-        ? <div className="mod-loading"><span className="mod-spinner" /> Chargement…</div>
-        : enrolled.length === 0
-          ? <div className="mod-empty">Aucun utilisateur enrôlé</div>
-          : enrolled.map(u => (
-            <div key={u.id} className="ep-row">
-              <div className="ep-uinfo">
-                <span className="ep-uname">{u.name}</span>
-                <span className="ep-uemail">{u.email}</span>
-                <span className="ep-date">Enrôlé le {new Date(u.enrolledAt).toLocaleDateString("fr-FR")}</span>
-              </div>
-              <button className="mod-btn mod-btn-delete ep-sm" disabled={removing === u.userId} onClick={() => unenroll(u.userId)}>
-                {removing === u.userId ? "…" : "Retirer"}
-              </button>
-            </div>
-          ))
-      }
     </div>
   )
 }
@@ -273,46 +277,45 @@ function CreateRoomModal({ onClose, onCreated }: { onClose: () => void; onCreate
   const handleSubmit = async () => {
     if (!form.title.trim()) { setError("Le titre est requis"); return }
     setLoading(true); setError("")
-    const res = await fetch("/api/rooms", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(form),
-    })
+    const res = await fetch("/api/rooms", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) })
     if (!res.ok) { setError("Erreur création salle"); setLoading(false); return }
     onCreated()
   }
 
   return (
-    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal">
-        <div className="modal-header">
-          <h2>Créer une nouvelle salle</h2>
-          <button className="modal-close" onClick={onClose}>✕</button>
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.5)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 }}>
+      <div style={{ background: "white", borderRadius: 14, width: "100%", maxWidth: 480, boxShadow: "0 24px 64px rgba(0,0,0,.2)" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "18px 22px", borderBottom: "1px solid #e2e8f0" }}>
+          <span style={{ fontSize: 16, fontWeight: 600, color: "#1a1a2e" }}>Créer une nouvelle salle</span>
+          <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 16, cursor: "pointer", color: "#94a3b8", width: 30, height: 30, borderRadius: "50%" }}>✕</button>
         </div>
-        <div className="modal-body">
-          <div className="modal-field">
-            <label>Nom de la salle *</label>
-            <input type="text" placeholder="ex: Introduction au Machine Learning"
-              value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} autoFocus />
+        <div style={{ padding: "18px 22px", display: "flex", flexDirection: "column", gap: 14 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+            <label style={{ fontSize: 13, fontWeight: 600, color: "#5f6368" }}>Nom de la salle *</label>
+            <input type="text" placeholder="ex: Introduction au Machine Learning" value={form.title}
+              onChange={e => setForm({ ...form, title: e.target.value })} autoFocus
+              style={{ padding: "9px 12px", border: "1px solid #e2e8f0", borderRadius: 8, fontSize: 14, outline: "none", fontFamily: "inherit" }} />
           </div>
-          <div className="modal-field">
-            <label>Description (optionnelle)</label>
-            <input type="text" placeholder="Description de la salle"
-              value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} />
+          <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+            <label style={{ fontSize: 13, fontWeight: 600, color: "#5f6368" }}>Description (optionnelle)</label>
+            <input type="text" placeholder="Description de la salle" value={form.description}
+              onChange={e => setForm({ ...form, description: e.target.value })}
+              style={{ padding: "9px 12px", border: "1px solid #e2e8f0", borderRadius: 8, fontSize: 14, outline: "none", fontFamily: "inherit" }} />
           </div>
-          <div className="modal-toggle" onClick={() => setForm({ ...form, chatEnabled: !form.chatEnabled })}>
-            <span>Activer le chat</span>
-            <div className={`toggle ${form.chatEnabled ? "on" : ""}`}><div className="thumb" /></div>
-          </div>
-          <div className="modal-toggle" onClick={() => setForm({ ...form, participationEnabled: !form.participationEnabled })}>
-            <span>Autoriser la participation</span>
-            <div className={`toggle ${form.participationEnabled ? "on" : ""}`}><div className="thumb" /></div>
-          </div>
-          {error && <p className="modal-error">{error}</p>}
+          {[{ label: "Activer le chat", key: "chatEnabled" as const }, { label: "Autoriser la participation", key: "participationEnabled" as const }].map(({ label, key }) => (
+            <div key={key} onClick={() => setForm({ ...form, [key]: !form[key] })}
+              style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px", border: "1px solid #e2e8f0", borderRadius: 8, cursor: "pointer", fontSize: 14, color: "#1a1a2e" }}>
+              <span>{label}</span>
+              <div style={{ width: 40, height: 22, borderRadius: 11, background: form[key] ? "#0065b1" : "#e2e8f0", position: "relative", transition: "background .2s" }}>
+                <div style={{ position: "absolute", top: 2, left: form[key] ? 18 : 2, width: 18, height: 18, borderRadius: "50%", background: "white", transition: "left .2s", boxShadow: "0 1px 3px rgba(0,0,0,.2)" }} />
+              </div>
+            </div>
+          ))}
+          {error && <p style={{ color: "#ef4444", fontSize: 13 }}>{error}</p>}
         </div>
-        <div className="modal-footer">
-          <button className="modal-btn-cancel" onClick={onClose}>Annuler</button>
-          <button className="modal-btn-create" onClick={handleSubmit} disabled={loading}>
+        <div style={{ padding: "14px 22px", display: "flex", justifyContent: "flex-end", gap: 10, borderTop: "1px solid #e2e8f0" }}>
+          <button onClick={onClose} style={{ padding: "8px 18px", border: "1px solid #e2e8f0", borderRadius: 8, background: "white", color: "#5f6368", fontSize: 14, cursor: "pointer", fontFamily: "inherit" }}>Annuler</button>
+          <button onClick={handleSubmit} disabled={loading} style={{ padding: "8px 20px", background: "#0065b1", color: "white", border: "none", borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", opacity: loading ? .5 : 1 }}>
             {loading ? "Création..." : "Créer la salle"}
           </button>
         </div>
@@ -323,7 +326,7 @@ function CreateRoomModal({ onClose, onCreated }: { onClose: () => void; onCreate
 
 // ── Page principale ──
 export default function ModeratorClient({ user }: { user: User }) {
-  const [tab, setTab] = useState<"rooms" | "recordings">("rooms")
+  const [nav, setNav] = useState<"rooms" | "recordings">("rooms")
   const [rooms, setRooms] = useState<Room[]>([])
   const [recordings, setRecordings] = useState<Recording[]>([])
   const [loading, setLoading] = useState(false)
@@ -331,461 +334,320 @@ export default function ModeratorClient({ user }: { user: User }) {
   const [selectedRoom, setSelectedRoom] = useState<Room | null>(null)
   const [deleting, setDeleting] = useState<string | null>(null)
   const [playingKey, setPlayingKey] = useState<string | null>(null)
-  const [activeRoomTab, setActiveRoomTab] = useState<Record<string, "enroll" | "settings">>({})
+  const [roomSubTab, setRoomSubTab] = useState<"enroll" | "settings">("enroll")
+  const [recPage, setRecPage] = useState(1)
 
-  const fetchRooms = useCallback(async () => {
-    setLoading(true)
-    const d = await (await fetch("/api/admin/rooms")).json()
-    setRooms(d.rooms ?? [])
-    setLoading(false)
-  }, [])
-
-  const fetchRecordings = useCallback(async () => {
-    setLoading(true)
-    const d = await (await fetch("/api/recordings/me")).json()
-    setRecordings(d.recordings ?? [])
-    setLoading(false)
-  }, [])
+  const fetchRooms = useCallback(async () => { setLoading(true); const d = await (await fetch("/api/admin/rooms")).json(); setRooms(d.rooms ?? []); setLoading(false) }, [])
+  const fetchRecordings = useCallback(async () => { setLoading(true); const d = await (await fetch("/api/recordings/me")).json(); setRecordings(d.recordings ?? []); setRecPage(1); setLoading(false) }, [])
 
   useEffect(() => {
-    if (tab === "rooms") fetchRooms()
-    if (tab === "recordings") fetchRecordings()
-  }, [tab, fetchRooms, fetchRecordings])
+    if (nav === "rooms") fetchRooms()
+    if (nav === "recordings") fetchRecordings()
+  }, [nav, fetchRooms, fetchRecordings])
 
   const startMeeting = async (room: Room) => {
     const res = await fetch("/api/create_stream", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        room_name: room.roomName,
-        metadata: {
-          creator_identity: user.name ?? user.email ?? "Modérateur",
-          enable_chat: room.chatEnabled,
-          allow_participation: room.participationEnabled,
-        },
-      }),
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ room_name: room.roomName, metadata: { creator_identity: user.name ?? user.email ?? "Modérateur", enable_chat: room.chatEnabled, allow_participation: room.participationEnabled } }),
     })
     if (!res.ok) { alert("Erreur démarrage"); return }
     const data = await res.json()
     window.location.href = `/host?at=${data.auth_token}&rt=${data.connection_details.token}`
   }
 
-  const copyLink = (roomName: string) => {
-    navigator.clipboard.writeText(`${window.location.origin}/watch/${roomName}`)
-    alert("Lien copié !")
-  }
+  const copyLink = (roomName: string) => { navigator.clipboard.writeText(`${window.location.origin}/watch/${roomName}`); alert("Lien copié !") }
 
   const deleteRoom = async (id: string) => {
     if (!confirm("Supprimer cette salle ?")) return
     setDeleting(id)
     await fetch(`/api/rooms/${id}`, { method: "DELETE" })
-    await fetchRooms()
-    setDeleting(null)
+    await fetchRooms(); setDeleting(null)
     if (selectedRoom?.id === id) setSelectedRoom(null)
   }
 
-  const roomTab = (id: string) => activeRoomTab[id] ?? "enroll"
-  const setRoomTab = (id: string, t: "enroll" | "settings") =>
-    setActiveRoomTab(prev => ({ ...prev, [id]: t }))
+  const userName = user.name ?? user.email ?? "Modérateur"
+  const pagedRecs = recordings.slice((recPage - 1) * PAGE_SIZE, recPage * PAGE_SIZE)
 
   return (
-    <div className="mod-root">
-      <header className="mod-header">
-        <a href="/" className="mod-logo-link">
-          <Image src="/logo-unchk.png" alt="UN-CHK" width={110} height={44} style={{ objectFit: "contain" }} priority />
-        </a>
-        <div className="mod-header-center">
-          <span className="mod-role-badge">Modérateur</span>
-          <span className="mod-username">{user.name ?? user.email}</span>
+    <div style={{ display: "flex", height: "100vh", fontFamily: "'Google Sans','Segoe UI',system-ui,sans-serif", color: "#1a1a2e", background: "#f8fafd" }}>
+
+      {/* ── SIDEBAR ── */}
+      <div style={{ width: 210, flexShrink: 0, background: "white", borderRight: "1px solid #e2e8f0", display: "flex", flexDirection: "column" }}>
+        {/* Logo */}
+        <div style={{ padding: "16px 14px 12px", borderBottom: "1px solid #f0f7ff", display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{ width: 30, height: 30, borderRadius: 7, background: "#0065b1", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><path d="M15 10l4.553-2.069A1 1 0 0121 8.87v6.259a1 1 0 01-1.447.894L15 14"/><rect x="3" y="6" width="12" height="12" rx="2"/></svg>
+          </div>
+          <div><div style={{ fontWeight: 600, fontSize: 14, color: "#1a1a2e" }}>UN-CHK</div><div style={{ fontSize: 11, color: "#9ca3af" }}>Webinaire</div></div>
         </div>
-        <div className="mod-header-right">
-          <button className="mod-btn mod-btn-outline" onClick={() => signOut({ callbackUrl: "/" })}>
-            Déconnexion
+
+        {/* Nav principale */}
+        <div style={{ padding: "10px 8px", display: "flex", flexDirection: "column", gap: 2 }}>
+          <div style={{ fontSize: 11, fontWeight: 500, color: "#9ca3af", padding: "6px 8px 2px", textTransform: "uppercase", letterSpacing: ".05em" }}>Mes espaces</div>
+          {[
+            { key: "rooms", label: "Mes salles", count: rooms.length, icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 10l4.553-2.069A1 1 0 0121 8.87v6.259a1 1 0 01-1.447.894L15 14"/><rect x="3" y="6" width="12" height="12" rx="2"/></svg> },
+            { key: "recordings", label: "Enregistrements", count: recordings.length, icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M10 8l6 4-6 4V8z"/></svg> },
+          ].map(item => (
+            <button key={item.key} onClick={() => setNav(item.key as any)}
+              style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 8px", borderRadius: 8, border: "none", background: nav === item.key ? "#e8f4ff" : "none", color: nav === item.key ? "#0065b1" : "#6b7280", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: nav === item.key ? 600 : 400, textAlign: "left", width: "100%" }}>
+              {item.icon}
+              <span style={{ flex: 1 }}>{item.label}</span>
+              {item.count > 0 && <span style={{ background: nav === item.key ? "#0065b1" : "#f0f7ff", color: nav === item.key ? "white" : "#0065b1", fontSize: 11, padding: "1px 5px", borderRadius: 10, fontWeight: 600 }}>{item.count}</span>}
+            </button>
+          ))}
+        </div>
+
+        {/* Liste salles dans sidebar */}
+        {rooms.length > 0 && (
+          <div style={{ flex: 1, padding: "0 8px 8px", overflow: "auto" }}>
+            <div style={{ fontSize: 11, fontWeight: 500, color: "#9ca3af", padding: "8px 8px 4px", textTransform: "uppercase", letterSpacing: ".05em" }}>Salle active</div>
+            {rooms.map(room => (
+              <button key={room.id} onClick={() => { setSelectedRoom(room); setNav("rooms"); setRoomSubTab("enroll") }}
+                style={{ display: "flex", flexDirection: "column", padding: "7px 8px", borderRadius: 8, border: "none", background: selectedRoom?.id === room.id ? "#e8f4ff" : "none", cursor: "pointer", fontFamily: "inherit", textAlign: "left", width: "100%", marginBottom: 2 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 4, width: "100%" }}>
+                  <span style={{ fontSize: 13, fontWeight: 500, color: selectedRoom?.id === room.id ? "#0065b1" : "#374151", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>{room.title}</span>
+                  {room.status === "LIVE" && <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#22c55e", flexShrink: 0, display: "inline-block" }} />}
+                </div>
+                <span style={{ fontSize: 11, color: "#9ca3af", marginTop: 1 }}>{room.enrollments} enrôlé{room.enrollments > 1 ? "s" : ""}{room.recordings > 0 ? ` · ${room.recordings} enreg.` : ""}</span>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Profil */}
+        <div style={{ padding: "10px 12px", borderTop: "1px solid #f0f7ff", display: "flex", alignItems: "center", gap: 8 }}>
+          <Avatar name={userName} color="#2fb344" size={28} />
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ fontSize: 12, fontWeight: 500, color: "#1a1a2e", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{userName}</div>
+            <div style={{ fontSize: 11, color: "#2fb344" }}>Modérateur</div>
+          </div>
+          <button onClick={() => signOut({ callbackUrl: "/" })} title="Déconnexion"
+            style={{ background: "none", border: "none", cursor: "pointer", color: "#e53e3e", padding: 4, borderRadius: 5, display: "flex" }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
           </button>
         </div>
-      </header>
-
-      <div className="mod-page-title">
-        <h1>Mes webinaires</h1>
-        <p>Gérez vos salles et enrôlez vos participants</p>
       </div>
 
-      <div className="mod-tabs-wrap">
-        <div className="mod-tabs">
-          <button className={`mod-tab${tab === "rooms" ? " active" : ""}`} onClick={() => setTab("rooms")}>
-            Salles{rooms.length > 0 ? ` (${rooms.length})` : ""}
-          </button>
-          <button className={`mod-tab${tab === "recordings" ? " active" : ""}`} onClick={() => setTab("recordings")}>
-            Enregistrements{recordings.length > 0 ? ` (${recordings.length})` : ""}
-          </button>
-        </div>
-      </div>
+      {/* ── MAIN ── */}
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
 
-      <main className="mod-main">
-
-        {tab === "rooms" && (
-          <div className="mod-rooms-wrap">
-            <div className="mod-rooms-toolbar">
-              <span className="mod-count">{rooms.length} salle{rooms.length > 1 ? "s" : ""}</span>
-              <button className="mod-btn mod-btn-primary" onClick={() => setShowCreate(true)}>
+        {/* Header */}
+        <div style={{ padding: "0 24px", height: 60, background: "white", borderBottom: "1px solid #e2e8f0", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
+          <div>
+            <div style={{ fontSize: 15, fontWeight: 600, color: "#1a1a2e" }}>
+              {nav === "rooms" ? (selectedRoom ? selectedRoom.title : "Mes salles") : "Enregistrements"}
+            </div>
+            <div style={{ fontSize: 12, color: "#9ca3af" }}>
+              {nav === "rooms" ? "Gérez vos salles et participants" : "Enregistrements de vos sessions"}
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            {nav === "rooms" && (
+              <button onClick={() => setShowCreate(true)}
+                style={{ padding: "7px 16px", background: "#0065b1", color: "white", border: "none", borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
                 + Créer une salle
               </button>
-            </div>
+            )}
+          </div>
+        </div>
 
-            {loading
-              ? <div className="mod-loading"><span className="mod-spinner" /> Chargement…</div>
-              : rooms.length === 0
-                ? (
-                  <div className="mod-empty-state">
-                    <div className="mod-empty-icon">🏠</div>
-                    <p>Vous n&apos;avez pas encore de salle</p>
-                    <button className="mod-btn mod-btn-primary" onClick={() => setShowCreate(true)}>
-                      Créer votre première salle
-                    </button>
+        {/* Contenu */}
+        <div style={{ flex: 1, overflow: "auto", padding: 20 }}>
+
+          {/* ── SALLES ── */}
+          {nav === "rooms" && (
+            <>
+              {/* Stats */}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 12, marginBottom: 16 }}>
+                {[
+                  { label: "Mes salles", value: rooms.length, color: "#0065b1" },
+                  { label: "Total enrôlés", value: rooms.reduce((a, r) => a + r.enrollments, 0), color: "#2fb344" },
+                  { label: "Enregistrements", value: rooms.reduce((a, r) => a + r.recordings, 0), color: "#d97706" },
+                ].map(c => (
+                  <div key={c.label} style={{ background: "white", border: "1px solid #e2e8f0", borderRadius: 10, padding: "14px 16px" }}>
+                    <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 4 }}>{c.label}</div>
+                    <div style={{ fontSize: 26, fontWeight: 600, color: c.color }}>{c.value}</div>
                   </div>
-                )
-                : (
-                  <div className="mod-rooms-layout">
-                    <div className="mod-card mod-rooms-list">
-                      <div className="mod-card-header">
-                        <span className="mod-card-title">Mes salles</span>
+                ))}
+              </div>
+
+              {loading ? (
+                <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "40px", color: "#9ca3af", fontSize: 14, background: "white", borderRadius: 10, border: "1px solid #e2e8f0" }}>
+                  <span style={{ width: 16, height: 16, border: "2px solid #e2e8f0", borderTopColor: "#0065b1", borderRadius: "50%", animation: "mod-spin .7s linear infinite", display: "inline-block" }} />Chargement…
+                </div>
+              ) : rooms.length === 0 ? (
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14, padding: "60px 0", background: "white", borderRadius: 10, border: "1px solid #e2e8f0" }}>
+                  <div style={{ fontSize: 36 }}>🏠</div>
+                  <p style={{ fontSize: 15, color: "#9ca3af" }}>Vous n&apos;avez pas encore de salle</p>
+                  <button onClick={() => setShowCreate(true)} style={{ padding: "8px 20px", background: "#0065b1", color: "white", border: "none", borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>Créer votre première salle</button>
+                </div>
+              ) : selectedRoom ? (
+                /* Panel salle sélectionnée */
+                <div style={{ background: "white", border: "1px solid #e2e8f0", borderRadius: 10, overflow: "hidden" }}>
+                  {/* Header salle */}
+                  <div style={{ padding: "16px 20px", borderBottom: "1px solid #f0f7ff", display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
+                    <div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                        <button onClick={() => setSelectedRoom(null)} style={{ background: "none", border: "none", color: "#9ca3af", cursor: "pointer", fontSize: 13, padding: 0, fontFamily: "inherit" }}>← Toutes les salles</button>
                       </div>
-                      {rooms.map(room => (
-                        <div key={room.id}
-                          className={`mod-room-item${selectedRoom?.id === room.id ? " active" : ""}`}
-                          onClick={() => setSelectedRoom(room)}>
-                          <div className="mod-room-item-top">
-                            <span className="mod-room-title">{room.title}</span>
-                            {room.status === "LIVE" && <span className="mod-live-dot">● LIVE</span>}
-                          </div>
-                          <div className="mod-room-meta">
-                            {room.enrollments} enrôlé{room.enrollments > 1 ? "s" : ""}
-                            {room.recordings > 0 ? ` · ${room.recordings} enreg.` : ""}
-                          </div>
+                      <div style={{ fontSize: 17, fontWeight: 600, color: "#1a1a2e" }}>{selectedRoom.title}</div>
+                      {selectedRoom.description && <div style={{ fontSize: 13, color: "#6b7280", marginTop: 3 }}>{selectedRoom.description}</div>}
+                    </div>
+                    <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+                      <span style={{ padding: "4px 12px", borderRadius: 20, fontSize: 12, fontWeight: 600, background: selectedRoom.status === "LIVE" ? "#dcfce7" : "#f1f5f9", color: selectedRoom.status === "LIVE" ? "#166534" : "#6b7280" }}>
+                        {selectedRoom.status === "LIVE" ? "● En direct" : selectedRoom.status === "ENDED" ? "Terminée" : "Planifiée"}
+                      </span>
+                      <button onClick={() => copyLink(selectedRoom.roomName)} style={{ padding: "6px 14px", background: "white", color: "#0065b1", border: "1px solid #0065b1", borderRadius: 8, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>Copier le lien</button>
+                      <button onClick={() => startMeeting(selectedRoom)} style={{ padding: "6px 16px", background: "#0065b1", color: "white", border: "none", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>▶ Démarrer</button>
+                    </div>
+                  </div>
+
+                  {/* Subtabs */}
+                  <div style={{ display: "flex", borderBottom: "1px solid #f0f7ff", padding: "0 20px" }}>
+                    {[{ key: "enroll", label: "Participants" }, { key: "settings", label: "Paramètres" }].map(t => (
+                      <button key={t.key} onClick={() => setRoomSubTab(t.key as any)}
+                        style={{ padding: "10px 16px", background: "none", border: "none", borderBottom: `2px solid ${roomSubTab === t.key ? "#0065b1" : "transparent"}`, color: roomSubTab === t.key ? "#0065b1" : "#9ca3af", fontSize: 14, fontWeight: roomSubTab === t.key ? 600 : 400, cursor: "pointer", fontFamily: "inherit" }}>
+                        {t.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {roomSubTab === "enroll" && <EnrollPanel sessionId={selectedRoom.id} />}
+
+                  {roomSubTab === "settings" && (
+                    <div style={{ padding: "16px 20px", display: "flex", flexDirection: "column", gap: 12 }}>
+                      {[
+                        { label: "Identifiant", value: selectedRoom.roomName, mono: true },
+                        { label: "Lien spectateur", value: `/watch/${selectedRoom.roomName}`, mono: true },
+                        { label: "Chat", value: selectedRoom.chatEnabled ? "Activé" : "Désactivé" },
+                        { label: "Participation", value: selectedRoom.participationEnabled ? "Activée" : "Désactivée" },
+                        { label: "Créée le", value: new Date(selectedRoom.createdAt).toLocaleDateString("fr-FR") },
+                      ].map(row => (
+                        <div key={row.label} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 0", borderBottom: "1px solid #f0f7ff", fontSize: 14, color: "#374151" }}>
+                          <span style={{ color: "#6b7280" }}>{row.label}</span>
+                          {row.mono ? <code style={{ background: "#f1f5f9", padding: "3px 8px", borderRadius: 5, fontSize: 13 }}>{row.value}</code> : <span style={{ fontWeight: 500 }}>{row.value}</span>}
                         </div>
                       ))}
+                      <button disabled={deleting === selectedRoom.id} onClick={() => deleteRoom(selectedRoom.id)}
+                        style={{ padding: "8px 18px", background: "white", color: "#e53e3e", border: "1px solid #e53e3e", borderRadius: 8, fontSize: 14, cursor: "pointer", fontFamily: "inherit", marginTop: 8, alignSelf: "flex-start", opacity: deleting === selectedRoom.id ? .5 : 1 }}>
+                        {deleting === selectedRoom.id ? "Suppression…" : "Supprimer la salle"}
+                      </button>
                     </div>
-
-                    {selectedRoom ? (
-                      <div className="mod-card mod-room-panel">
-                        <div className="mod-room-panel-header">
-                          <div>
-                            <h2 className="mod-room-panel-title">{selectedRoom.title}</h2>
-                            {selectedRoom.description && (
-                              <p className="mod-room-panel-desc">{selectedRoom.description}</p>
-                            )}
-                          </div>
-                          <div className="mod-room-panel-actions">
-                            <button className="mod-btn mod-btn-outline"
-                              onClick={() => copyLink(selectedRoom.roomName)}>
-                              Copier le lien
-                            </button>
-                            <button className="mod-btn mod-btn-primary"
-                              onClick={() => startMeeting(selectedRoom)}>
-                              ▶ Démarrer
-                            </button>
-                          </div>
-                        </div>
-
-                        <div className="mod-subtabs">
-                          <button className={`mod-subtab${roomTab(selectedRoom.id) === "enroll" ? " active" : ""}`}
-                            onClick={() => setRoomTab(selectedRoom.id, "enroll")}>
-                            Participants
-                          </button>
-                          <button className={`mod-subtab${roomTab(selectedRoom.id) === "settings" ? " active" : ""}`}
-                            onClick={() => setRoomTab(selectedRoom.id, "settings")}>
-                            Paramètres
-                          </button>
-                        </div>
-
-                        {roomTab(selectedRoom.id) === "enroll" && (
-                          <EnrollPanel sessionId={selectedRoom.id} sessionTitle={selectedRoom.title} />
-                        )}
-
-                        {roomTab(selectedRoom.id) === "settings" && (
-                          <div className="mod-settings">
-                            <div className="mod-setting-row">
-                              <span>Identifiant</span>
-                              <code>{selectedRoom.roomName}</code>
+                  )}
+                </div>
+              ) : (
+                /* Liste des salles */
+                <div style={{ background: "white", border: "1px solid #e2e8f0", borderRadius: 10, overflow: "hidden" }}>
+                  <div style={{ padding: "12px 16px", borderBottom: "1px solid #f0f7ff", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                    <span style={{ fontSize: 14, fontWeight: 600 }}>Toutes mes salles</span>
+                    <span style={{ background: "#e8f4ff", color: "#0065b1", fontSize: 12, fontWeight: 700, padding: "2px 8px", borderRadius: 10 }}>{rooms.length}</span>
+                  </div>
+                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                    <thead>
+                      <tr style={{ background: "#f8fbff" }}>
+                        {["Salle", "Enrôlés", "Enregistrements", "Statut", "Actions"].map(h => (
+                          <th key={h} style={{ padding: "9px 16px", textAlign: "left", fontSize: 13, fontWeight: 600, color: "#6b7280", borderBottom: "1px solid #f0f7ff" }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rooms.map(room => (
+                        <tr key={room.id} style={{ borderBottom: "1px solid #f0f7ff", cursor: "pointer" }} onClick={() => setSelectedRoom(room)}>
+                          <td style={{ padding: "12px 16px" }}>
+                            <div style={{ fontSize: 14, fontWeight: 600, color: "#1a1a2e" }}>{room.title}</div>
+                            <div style={{ fontSize: 12, color: "#9ca3af", marginTop: 2 }}>{new Date(room.createdAt).toLocaleDateString("fr-FR")}</div>
+                          </td>
+                          <td style={{ padding: "12px 16px", fontSize: 14, color: "#374151" }}>{room.enrollments}</td>
+                          <td style={{ padding: "12px 16px", fontSize: 14, color: "#374151" }}>{room.recordings}</td>
+                          <td style={{ padding: "12px 16px" }}>
+                            <span style={{ padding: "3px 10px", borderRadius: 20, fontSize: 12, fontWeight: 600, background: room.status === "LIVE" ? "#dcfce7" : "#f1f5f9", color: room.status === "LIVE" ? "#166534" : "#6b7280" }}>
+                              {room.status === "LIVE" ? "● En direct" : room.status === "ENDED" ? "Terminée" : "Planifiée"}
+                            </span>
+                          </td>
+                          <td style={{ padding: "12px 16px" }}>
+                            <div style={{ display: "flex", gap: 6 }} onClick={e => e.stopPropagation()}>
+                              <button onClick={() => startMeeting(room)} style={{ padding: "5px 12px", background: "#0065b1", color: "white", border: "none", borderRadius: 7, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>▶ Démarrer</button>
+                              <button onClick={() => { setSelectedRoom(room); setRoomSubTab("enroll") }} style={{ padding: "5px 12px", background: "white", color: "#0065b1", border: "1px solid #0065b1", borderRadius: 7, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>Gérer</button>
                             </div>
-                            <div className="mod-setting-row">
-                              <span>Lien spectateur</span>
-                              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                                <code style={{ fontSize: "0.72rem" }}>/watch/{selectedRoom.roomName}</code>
-                                <button className="mod-btn-copy-sm"
-                                  onClick={() => copyLink(selectedRoom.roomName)}>Copier</button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </>
+          )}
+
+          {/* ── ENREGISTREMENTS ── */}
+          {nav === "recordings" && (
+            <div style={{ background: "white", border: "1px solid #e2e8f0", borderRadius: 10, overflow: "hidden" }}>
+              <div style={{ padding: "12px 16px", borderBottom: "1px solid #f0f7ff", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <span style={{ fontSize: 14, fontWeight: 600 }}>Enregistrements de mes salles</span>
+                <span style={{ background: "#e8f4ff", color: "#0065b1", fontSize: 12, fontWeight: 700, padding: "2px 8px", borderRadius: 10 }}>{recordings.length}</span>
+              </div>
+              {loading
+                ? <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "30px 20px", color: "#9ca3af", fontSize: 14 }}><span style={{ width: 14, height: 14, border: "2px solid #e2e8f0", borderTopColor: "#0065b1", borderRadius: "50%", animation: "mod-spin .7s linear infinite", display: "inline-block" }} />Chargement…</div>
+                : recordings.length === 0 ? <div style={{ padding: "40px", textAlign: "center", color: "#9ca3af", fontSize: 14 }}>Aucun enregistrement disponible</div>
+                  : (
+                    <>
+                      {pagedRecs.map(rec => (
+                        <div key={rec.id} style={{ borderBottom: "1px solid #f0f7ff" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px" }}>
+                            <div style={{ width: 36, height: 36, borderRadius: 9, background: "#e8f4ff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0065b1" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M10 8l6 4-6 4V8z"/></svg>
+                            </div>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontSize: 14, fontWeight: 600, color: "#1a1a2e", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{rec.filename}</div>
+                              <div style={{ display: "flex", gap: 10, marginTop: 3, flexWrap: "wrap" }}>
+                                <span style={{ fontSize: 13, color: "#9ca3af" }}>🏠 {rec.session.title}</span>
+                                {rec.duration != null && <span style={{ fontSize: 13, color: "#9ca3af" }}>⏱ {formatDuration(rec.duration)}</span>}
+                                {rec.size != null && <span style={{ fontSize: 13, color: "#9ca3af" }}>💾 {formatSize(rec.size)}</span>}
+                                <span style={{ fontSize: 13, color: "#9ca3af" }}>{new Date(rec.createdAt).toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" })}</span>
                               </div>
                             </div>
-                            <div className="mod-setting-row">
-                              <span>Chat</span>
-                              <span className={`mod-badge ${selectedRoom.chatEnabled ? "on" : "off"}`}>
-                                {selectedRoom.chatEnabled ? "Activé" : "Désactivé"}
-                              </span>
+                            <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                              <button onClick={() => setPlayingKey(playingKey === rec.s3Key ? null : rec.s3Key)}
+                                style={{ padding: "5px 12px", background: "#0065b1", color: "white", border: "none", borderRadius: 7, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
+                                {playingKey === rec.s3Key ? "✖ Fermer" : "▶ Voir"}
+                              </button>
+                              <a href={`/api/download-recording?key=${encodeURIComponent(rec.s3Key)}`} target="_blank" rel="noopener noreferrer"
+                                style={{ padding: "5px 12px", background: "white", color: "#2fb344", border: "1px solid #2fb344", borderRadius: 7, fontSize: 13, textDecoration: "none", fontFamily: "inherit" }}>⬇ Télécharger</a>
                             </div>
-                            <div className="mod-setting-row">
-                              <span>Participation</span>
-                              <span className={`mod-badge ${selectedRoom.participationEnabled ? "on" : "off"}`}>
-                                {selectedRoom.participationEnabled ? "Activée" : "Désactivée"}
-                              </span>
-                            </div>
-                            <div className="mod-setting-row">
-                              <span>Statut</span>
-                              <span className={`mod-badge ${selectedRoom.status === "LIVE" ? "on" : "off"}`}>
-                                {selectedRoom.status === "LIVE" ? "🔴 En direct"
-                                  : selectedRoom.status === "ENDED" ? "Terminée" : "Programmée"}
-                              </span>
-                            </div>
-                            <div className="mod-setting-row">
-                              <span>Créée le</span>
-                              <span style={{ fontSize: "0.82rem", color: "#6b7280" }}>
-                                {new Date(selectedRoom.createdAt).toLocaleDateString("fr-FR")}
-                              </span>
-                            </div>
-                            <button className="mod-btn mod-btn-delete"
-                              disabled={deleting === selectedRoom.id}
-                              onClick={() => deleteRoom(selectedRoom.id)}>
-                              {deleting === selectedRoom.id ? "Suppression…" : "Supprimer la salle"}
-                            </button>
                           </div>
-                        )}
-                      </div>
-                    ) : (
-                      <div className="mod-card mod-room-panel">
-                        <div className="mod-empty" style={{ padding: 48 }}>
-                          Sélectionnez une salle pour gérer ses participants
+                          {playingKey === rec.s3Key && (
+                            <div style={{ padding: "0 16px 14px" }}>
+                              <video controls autoPlay src={`/api/download-recording?key=${encodeURIComponent(rec.s3Key)}`} style={{ width: "100%", maxHeight: 400, borderRadius: 8, background: "#000", display: "block" }}>
+                                Votre navigateur ne supporte pas la lecture vidéo.
+                              </video>
+                            </div>
+                          )}
                         </div>
-                      </div>
-                    )}
-                  </div>
-                )
-            }
-          </div>
-        )}
-
-        {tab === "recordings" && (
-          <div className="mod-card">
-            <div className="mod-card-header">
-              <span className="mod-card-title">Enregistrements de mes salles</span>
-              <span className="mod-count">{recordings.length}</span>
+                      ))}
+                      <Pagination total={recordings.length} page={recPage} onPage={setRecPage} />
+                    </>
+                  )}
             </div>
-            {loading
-              ? <div className="mod-loading"><span className="mod-spinner" /> Chargement…</div>
-              : recordings.length === 0
-                ? <div className="mod-empty">Aucun enregistrement disponible</div>
-                : recordings.map(rec => (
-                  <div key={rec.id} className="mod-rec-item">
-                    <div className="mod-rec-row">
-                      <svg className="mod-rec-icon" viewBox="0 0 24 24" fill="none">
-                        <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="1.5" />
-                        <path d="M10 8l6 4-6 4V8z" fill="currentColor" />
-                      </svg>
-                      <div className="mod-rec-info">
-                        <span className="mod-rec-filename">{rec.filename}</span>
-                        <div className="mod-rec-meta">
-                          <span>🏠 {rec.session.title}</span>
-                          {rec.duration != null && <span>⏱ {formatDuration(rec.duration)}</span>}
-                          {rec.size != null && <span>💾 {formatSize(rec.size)}</span>}
-                          <span>{new Date(rec.createdAt).toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" })}</span>
-                        </div>
-                      </div>
-                      <div className="mod-rec-actions">
-                        <button className="mod-btn mod-btn-primary"
-                          onClick={() => setPlayingKey(playingKey === rec.s3Key ? null : rec.s3Key)}>
-                          {playingKey === rec.s3Key ? "✖ Fermer" : "▶ Voir"}
-                        </button>
-                        <a href={`/api/download-recording?key=${encodeURIComponent(rec.s3Key)}`}
-                          className="mod-btn mod-btn-green" target="_blank" rel="noopener noreferrer">
-                          ⬇ Télécharger
-                        </a>
-                      </div>
-                    </div>
-                    {playingKey === rec.s3Key && (
-                      <div className="mod-rec-player">
-                        <video controls autoPlay
-                          src={`/api/download-recording?key=${encodeURIComponent(rec.s3Key)}`}>
-                          Votre navigateur ne supporte pas la lecture vidéo.
-                        </video>
-                      </div>
-                    )}
-                  </div>
-                ))
-            }
-          </div>
-        )}
-      </main>
+          )}
+        </div>
 
-      <footer className="mod-footer">
-        <p>Ministère de l&apos;Enseignement Supérieur, de la Recherche et de l&apos;Innovation</p>
-        <p className="mod-footer-strong">Université Numérique Cheikh Hamidou Kane (UN-CHK)</p>
-        <p className="mod-footer-copy">© DITSI – UN-CHK – 2026 – Tous droits réservés</p>
-      </footer>
+        {/* Footer */}
+        <div style={{ background: "white", borderTop: "1px solid #e2e8f0", padding: "10px 24px", textAlign: "center", flexShrink: 0 }}>
+          <p style={{ fontSize: 12, color: "#6b7280" }}>Ministère de l&apos;Enseignement Supérieur, de la Recherche et de l&apos;Innovation</p>
+          <p style={{ fontSize: 13, fontWeight: 600, color: "#0065b1" }}>Université Numérique Cheikh Hamidou Kane (UN-CHK)</p>
+          <p style={{ fontSize: 11, color: "#9ca3af" }}>© DITSI – UN-CHK – 2026</p>
+        </div>
+      </div>
 
-      {showCreate && (
-        <CreateRoomModal
-          onClose={() => setShowCreate(false)}
-          onCreated={() => { fetchRooms(); setShowCreate(false) }}
-        />
-      )}
+      {showCreate && <CreateRoomModal onClose={() => setShowCreate(false)} onCreated={() => { fetchRooms(); setShowCreate(false) }} />}
 
       <style>{`
-        *{box-sizing:border-box;margin:0;padding:0;}
-        .mod-root{min-height:100vh;display:flex;flex-direction:column;background:#f8fafd;font-family:'Google Sans','Segoe UI',system-ui,sans-serif;color:#1a1a2e;}
-        .mod-header{display:flex;align-items:center;justify-content:space-between;padding:0 32px;height:64px;background:#fff;border-bottom:1px solid #e2e8f0;}
-        .mod-logo-link{display:flex;align-items:center;}
-        .mod-header-center{display:flex;align-items:center;gap:10px;}
-        .mod-header-right{display:flex;align-items:center;gap:12px;}
-        .mod-role-badge{background:#dbeafe;color:#1e40af;font-size:0.72rem;font-weight:700;padding:3px 10px;border-radius:10px;text-transform:uppercase;}
-        .mod-username{font-size:0.88rem;color:#374151;font-weight:500;}
-        .mod-page-title{padding:28px 32px 0;}
-        .mod-page-title h1{font-size:1.6rem;font-weight:700;}
-        .mod-page-title p{font-size:0.88rem;color:#6b7280;margin-top:4px;}
-        .mod-tabs-wrap{padding:20px 32px 0;}
-        .mod-tabs{display:flex;border-bottom:2px solid #e2e8f0;}
-        .mod-tab{padding:10px 24px;background:none;border:none;font-family:inherit;font-size:0.88rem;font-weight:500;color:#6b7280;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;transition:all .15s;}
-        .mod-tab:hover{color:#0065b1;}
-        .mod-tab.active{color:#0065b1;border-bottom-color:#0065b1;font-weight:700;}
-        .mod-main{flex:1;max-width:1140px;width:100%;margin:0 auto;padding:24px 32px 40px;}
-        .mod-rooms-wrap{display:flex;flex-direction:column;gap:16px;}
-        .mod-rooms-toolbar{display:flex;align-items:center;justify-content:space-between;}
-        .mod-rooms-layout{display:flex;gap:16px;align-items:flex-start;}
-        .mod-rooms-list{width:280px;flex-shrink:0;}
-        .mod-room-panel{flex:1;min-width:0;}
-        .mod-card{background:#fff;border-radius:12px;border:1px solid #e2e8f0;overflow:hidden;}
-        .mod-card-header{display:flex;align-items:center;justify-content:space-between;padding:16px 24px;border-bottom:1px solid #f0f7ff;}
-        .mod-card-title{font-size:0.95rem;font-weight:700;}
-        .mod-count{background:#e8f4ff;color:#0065b1;font-size:0.72rem;font-weight:700;padding:2px 8px;border-radius:10px;}
-        .mod-room-item{padding:12px 18px;cursor:pointer;border-bottom:1px solid #f0f7ff;border-left:3px solid transparent;transition:background .12s;}
-        .mod-room-item:last-child{border-bottom:none;}
-        .mod-room-item:hover{background:#f8fbff;}
-        .mod-room-item.active{background:#e8f4ff;border-left-color:#0065b1;}
-        .mod-room-item-top{display:flex;align-items:center;justify-content:space-between;gap:8px;}
-        .mod-room-title{font-size:0.88rem;font-weight:600;color:#1a1a2e;}
-        .mod-live-dot{font-size:0.7rem;font-weight:700;color:#2fb344;}
-        .mod-room-meta{font-size:0.74rem;color:#9ca3af;margin-top:3px;}
-        .mod-room-panel-header{display:flex;align-items:flex-start;justify-content:space-between;padding:20px 24px;border-bottom:1px solid #f0f7ff;gap:12px;}
-        .mod-room-panel-title{font-size:1.05rem;font-weight:700;color:#1a1a2e;}
-        .mod-room-panel-desc{font-size:0.82rem;color:#6b7280;margin-top:4px;}
-        .mod-room-panel-actions{display:flex;gap:8px;flex-shrink:0;}
-        .mod-subtabs{display:flex;padding:0 24px;border-bottom:1px solid #f0f7ff;}
-        .mod-subtab{padding:10px 16px;background:none;border:none;font-family:inherit;font-size:0.84rem;font-weight:500;color:#9ca3af;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;transition:all .15s;}
-        .mod-subtab.active{color:#0065b1;border-bottom-color:#0065b1;font-weight:700;}
-        .mod-settings{padding:16px 24px;display:flex;flex-direction:column;gap:12px;}
-        .mod-setting-row{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid #f0f7ff;font-size:0.88rem;color:#374151;}
-        .mod-setting-row code{background:#f1f5f9;padding:3px 8px;border-radius:5px;font-size:0.78rem;}
-        .mod-badge{padding:3px 10px;border-radius:20px;font-size:0.75rem;font-weight:600;}
-        .mod-badge.on{background:#dcfce7;color:#2fb344;}
-        .mod-badge.off{background:#f1f5f9;color:#94a3b8;}
-        .mod-btn{display:inline-flex;align-items:center;gap:5px;padding:7px 16px;border-radius:8px;font-size:0.83rem;font-weight:600;font-family:inherit;cursor:pointer;text-decoration:none;border:none;white-space:nowrap;transition:filter .15s;}
-        .mod-btn-outline:hover:not(:disabled){background:#e8f4ff;} .mod-btn-primary:hover:not(:disabled){background:#004d8c;} .mod-btn-green:hover:not(:disabled){background:#e6f7eb;} .mod-btn-delete:hover:not(:disabled){background:#fff0f0;}
-        .mod-btn:disabled{opacity:.45;cursor:not-allowed;}
-        .mod-btn-outline{background:#fff;border:1.5px solid #0065b1;color:#0065b1;}
-        .mod-btn-primary{background:#0065b1;color:#fff;}
-        .mod-btn-green{background:#fff;border:1.5px solid #2fb344;color:#2fb344;}
-        .mod-btn-delete{margin-top:8px;background:#fff;border:1.5px solid #e53e3e;color:#e53e3e;}
-        .mod-btn-copy-sm{padding:3px 10px;background:white;border:1px solid #e2e8f0;border-radius:5px;font-size:0.75rem;color:#5f6368;cursor:pointer;font-family:inherit;}
-        .mod-loading{display:flex;align-items:center;gap:10px;padding:40px 24px;color:#9ca3af;}
-        .mod-spinner{width:16px;height:16px;border:2px solid #e2e8f0;border-top-color:#0065b1;border-radius:50%;animation:mod-spin .7s linear infinite;display:inline-block;}
-        @keyframes mod-spin{to{transform:rotate(360deg)}}
-        .mod-empty{padding:40px;text-align:center;color:#9ca3af;font-size:0.9rem;}
-        .mod-empty-state{display:flex;flex-direction:column;align-items:center;gap:16px;padding:80px 0;color:#9ca3af;}
-        .mod-empty-icon{font-size:3rem;}
-        .mod-rec-item{border-bottom:1px solid #f0f7ff;}
-        .mod-rec-item:last-child{border-bottom:none;}
-        .mod-rec-row{display:flex;align-items:center;gap:14px;padding:14px 20px;}
-        .mod-rec-icon{width:26px;height:26px;color:#0065b1;flex-shrink:0;}
-        .mod-rec-info{flex:1;min-width:0;}
-        .mod-rec-filename{font-size:0.88rem;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block;}
-        .mod-rec-meta{display:flex;gap:12px;margin-top:4px;flex-wrap:wrap;}
-        .mod-rec-meta span{font-size:0.75rem;color:#9ca3af;}
-        .mod-rec-actions{display:flex;gap:8px;flex-shrink:0;}
-        .mod-rec-player{padding:0 20px 16px;}
-        .mod-rec-player video{width:100%;max-height:400px;border-radius:8px;background:#000;display:block;}
-        .mod-footer{background:#fff;border-top:1px solid #e2e8f0;padding:20px 32px;text-align:center;display:flex;flex-direction:column;gap:3px;margin-top:auto;}
-        .mod-footer p{font-size:0.78rem;color:#6b7280;}
-        .mod-footer-strong{font-size:0.88rem;font-weight:700;color:#0065b1!important;}
-        .mod-footer-copy{font-size:0.72rem;color:#9ca3af!important;}
-        .ep-root{display:flex;flex-direction:column;}
-        .ep-header{display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:1px solid #f0f7ff;gap:12px;flex-wrap:wrap;}
-        .ep-title{font-size:0.9rem;font-weight:700;color:#1a1a2e;}
-        .ep-tabs{display:flex;gap:4px;}
-        .ep-tab{padding:5px 14px;border:1.5px solid #d1e4f5;background:white;border-radius:20px;font-size:0.78rem;font-weight:600;color:#6b7280;cursor:pointer;font-family:inherit;transition:all .15s;}
-        .ep-tab.active{background:#0065b1;border-color:#0065b1;color:#fff;}
-        .ep-search{display:flex;align-items:center;gap:8px;padding:12px 20px;border-bottom:1px solid #f0f7ff;}
-        .ep-input{flex:1;padding:7px 11px;border:1.5px solid #d1e4f5;border-radius:7px;font-size:0.83rem;font-family:inherit;outline:none;color:#1a1a2e;}
-        .ep-input:focus{border-color:#0065b1;}
-        .ep-spinner{width:14px;height:14px;border:2px solid #d1e4f5;border-top-color:#0065b1;border-radius:50%;animation:mod-spin .7s linear infinite;flex-shrink:0;display:inline-block;}
-        .ep-results{background:#f8fbff;border-bottom:1px solid #f0f7ff;}
-        .ep-row{display:flex;align-items:center;justify-content:space-between;padding:10px 20px;border-bottom:1px solid #f0f7ff;}
-        .ep-row:last-child{border-bottom:none;}
-        .ep-uinfo{display:flex;flex-direction:column;gap:2px;}
-        .ep-uname{font-size:0.84rem;font-weight:600;color:#1a1a2e;}
-        .ep-uemail{font-size:0.74rem;color:#9ca3af;}
-        .ep-date{font-size:0.7rem;color:#c4cdd9;}
-        .ep-list-header{display:flex;align-items:center;gap:8px;padding:10px 20px;background:#f8fbff;border-bottom:1px solid #f0f7ff;border-top:1px solid #f0f7ff;}
-        .ep-list-header span{font-size:0.78rem;font-weight:600;color:#6b7280;}
-        .ep-sm{padding:5px 11px;font-size:0.76rem;}
-        .ep-csv{padding:14px 20px;border-bottom:1px solid #f0f7ff;display:flex;flex-direction:column;gap:10px;}
-        .ep-csv-info-bar{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;}
-        .ep-csv-info{font-size:0.72rem;color:#9ca3af;line-height:1.6;}
-        .ep-csv-info code{font-family:monospace;font-size:0.76rem;background:#e8f4ff;padding:1px 4px;border-radius:3px;color:#0065b1;}
-        .ep-csv-info strong{color:#374151;}
-        .ep-csv-dl{display:inline-flex;align-items:center;gap:5px;font-size:0.76rem;color:#0065b1;text-decoration:none;font-weight:600;white-space:nowrap;padding:5px 12px;border:1.5px solid #0065b1;border-radius:7px;transition:background .15s;flex-shrink:0;}
-        .ep-csv-dl:hover{background:#e8f4ff;}
-        .ep-dropzone{border:2px dashed #d1e4f5;border-radius:10px;padding:24px 20px;text-align:center;cursor:pointer;transition:all .15s;}
-        .ep-dropzone:hover,.ep-dropzone.drag{border-color:#0065b1;background:#f0f7ff;}
-        .ep-dropzone.ok{border-color:#2fb344;background:#f0fdf4;}
-        .ep-dropzone-content{display:flex;flex-direction:column;align-items:center;gap:6px;}
-        .ep-dropzone-icon{font-size:1.8rem;}
-        .ep-hint{font-size:0.82rem;color:#6b7280;font-weight:500;}
-        .ep-hint-sub{font-size:0.72rem;color:#9ca3af;}
-        .ep-fname{font-size:0.84rem;color:#1a1a2e;font-weight:600;}
-        .ep-csv-err{font-size:0.78rem;color:#b91c1c;background:#fff0f0;border:1px solid #fecaca;border-radius:6px;padding:8px 12px;}
-        .ep-progress-wrap{display:flex;flex-direction:column;gap:5px;}
-        .ep-progress-bar{width:100%;height:5px;background:#e8f4ff;border-radius:3px;overflow:hidden;}
-        .ep-progress-fill{height:100%;width:40%;background:#0065b1;border-radius:3px;animation:ep-progress 1.4s ease-in-out infinite;}
-        @keyframes ep-progress{0%{transform:translateX(-150%)}100%{transform:translateX(350%)}}
-        .ep-progress-label{font-size:0.72rem;color:#0065b1;font-weight:500;}
-        .ep-csv-success-banner{background:#f0fdf4;border:1px solid #bbf7d0;border-radius:7px;padding:8px 14px;font-size:0.82rem;font-weight:600;color:#2fb344;}
-        .ep-csv-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;}
-        .ep-stat{display:flex;flex-direction:column;align-items:center;padding:12px 6px;border-radius:8px;gap:3px;}
-        .ep-sv{font-size:1.4rem;font-weight:700;}.ep-sl{font-size:0.68rem;font-weight:600;}
-        .ep-stat-total{background:#f8fbff;}.ep-stat-total .ep-sv{color:#0065b1;}.ep-stat-total .ep-sl{color:#9ca3af;}
-        .ep-stat-new{background:#eff6ff;}.ep-stat-new .ep-sv{color:#3b82f6;}.ep-stat-new .ep-sl{color:#3b82f6;}
-        .ep-stat-ok{background:#f0fdf4;}.ep-stat-ok .ep-sv{color:#2fb344;}.ep-stat-ok .ep-sl{color:#2fb344;}
-        .ep-stat-skip{background:#fffbeb;}.ep-stat-skip .ep-sv{color:#d97706;}.ep-stat-skip .ep-sl{color:#d97706;}
-        .ep-csv-detail{background:#f8fbff;border:1px solid #e8f4ff;border-radius:7px;padding:10px;}
-        .ep-csv-dl-title{font-size:0.76rem;font-weight:700;color:#1a1a2e;margin-bottom:6px;}
-        .ep-csv-dl-note{font-size:0.7rem;color:#9ca3af;font-weight:400;}
-        .ep-chips{display:flex;flex-wrap:wrap;gap:5px;max-height:120px;overflow-y:auto;}
-        .ep-chip{font-size:0.7rem;padding:2px 8px;border-radius:20px;font-weight:500;}
-        .ep-chip-skip{background:#fffbeb;color:#d97706;}
-        .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:100;}
-        .modal{background:white;border-radius:16px;width:100%;max-width:480px;box-shadow:0 24px 64px rgba(0,0,0,.2);}
-        .modal-header{display:flex;align-items:center;justify-content:space-between;padding:20px 24px;border-bottom:1px solid #e2e8f0;}
-        .modal-header h2{font-size:1.05rem;font-weight:700;color:#1a1a2e;}
-        .modal-close{background:none;border:none;font-size:1rem;cursor:pointer;color:#94a3b8;width:32px;height:32px;border-radius:50%;}
-        .modal-close:hover{background:#f1f5f9;}
-        .modal-body{padding:20px 24px;display:flex;flex-direction:column;gap:14px;}
-        .modal-field{display:flex;flex-direction:column;gap:5px;}
-        .modal-field label{font-size:0.82rem;font-weight:600;color:#5f6368;}
-        .modal-field input{padding:10px 13px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:0.9rem;outline:none;font-family:inherit;}
-        .modal-field input:focus{border-color:#0065b1;}
-        .modal-toggle{display:flex;align-items:center;justify-content:space-between;padding:12px;border:1.5px solid #e2e8f0;border-radius:8px;cursor:pointer;font-size:0.88rem;color:#1a1a2e;}
-        .modal-toggle:hover{background:#f8fafc;}
-        .toggle{width:42px;height:22px;border-radius:11px;background:#e2e8f0;position:relative;transition:background .2s;}
-        .toggle.on{background:#0065b1;}
-        .thumb{position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:white;transition:transform .2s;box-shadow:0 1px 3px rgba(0,0,0,.2);}
-        .toggle.on .thumb{transform:translateX(20px);}
-        .modal-error{color:#ef4444;font-size:0.82rem;}
-        .modal-footer{padding:16px 24px;display:flex;justify-content:flex-end;gap:10px;border-top:1px solid #e2e8f0;}
-        .modal-btn-cancel{padding:9px 18px;border:1.5px solid #e2e8f0;border-radius:8px;background:white;color:#5f6368;font-size:0.88rem;cursor:pointer;font-family:inherit;}
-        .modal-btn-create{padding:9px 20px;background:#0065b1;color:white;border:none;border-radius:8px;font-size:0.88rem;font-weight:600;cursor:pointer;font-family:inherit;}
-        .modal-btn-create:disabled{opacity:.5;cursor:not-allowed;}
-        @media(max-width:900px){
-          .mod-rooms-layout{flex-direction:column;}
-          .mod-rooms-list{width:100%;}
-          .mod-header,.mod-page-title,.mod-tabs-wrap,.mod-main{padding-left:16px;padding-right:16px;}
-        }
+        @keyframes mod-spin { to { transform: rotate(360deg) } }
+        @keyframes ep-progress { 0% { transform: translateX(-150%) } 100% { transform: translateX(350%) } }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        ::-webkit-scrollbar { width: 5px; height: 5px; }
+        ::-webkit-scrollbar-track { background: #f8fafd; }
+        ::-webkit-scrollbar-thumb { background: #d1e4f5; border-radius: 3px; }
       `}</style>
     </div>
   )
