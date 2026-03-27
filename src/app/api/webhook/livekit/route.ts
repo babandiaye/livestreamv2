@@ -28,27 +28,36 @@ export async function POST(req: NextRequest) {
     // ── Egress démarré → Recording PROCESSING ──
     if (event.event === "egress_started" && event.egressInfo) {
       const egress = event.egressInfo
-      const roomName = egress.roomName
+
+      // Pour web egress, roomName peut être vide — extraire depuis l'URL
+      let roomName = egress.roomName
+      if (!roomName && egress.request?.case === "web") {
+        const url = (egress.request.value as any)?.url ?? ""
+        const match = url.match(/roomName=([^&]+)/)
+        if (match) roomName = decodeURIComponent(match[1])
+      }
       console.log("[webhook] egress_started:", egress.egressId, roomName)
 
-      const dbSession = await prisma.session.findUnique({ where: { roomName } })
-      if (dbSession) {
-        const existing = await prisma.recording.findFirst({
-          where: { egressId: egress.egressId },
-        })
-        if (!existing) {
-          await prisma.recording.create({
-            data: {
-              sessionId: dbSession.id,
-              s3Key: "",
-              s3Bucket: process.env.S3_BUCKET ?? "preprod-webinairerecordings",
-              filename: `Enregistrement en cours…`,
-              egressId: egress.egressId,
-              status: "PROCESSING",
-              startedAt: new Date(),
-            },
+      if (roomName) {
+        const dbSession = await prisma.session.findUnique({ where: { roomName } })
+        if (dbSession) {
+          const existing = await prisma.recording.findFirst({
+            where: { egressId: egress.egressId },
           })
-          console.log("[webhook] Recording PROCESSING créé:", egress.egressId)
+          if (!existing) {
+            await prisma.recording.create({
+              data: {
+                sessionId: dbSession.id,
+                s3Key: "",
+                s3Bucket: process.env.S3_BUCKET ?? "preprod-webinairerecordings",
+                filename: "Enregistrement en cours…",
+                egressId: egress.egressId,
+                status: "PROCESSING",
+                startedAt: new Date(),
+              },
+            })
+            console.log("[webhook] Recording PROCESSING créé:", egress.egressId)
+          }
         }
       }
     }
@@ -56,8 +65,15 @@ export async function POST(req: NextRequest) {
     // ── Egress terminé avec succès → Recording READY ──
     if (event.event === "egress_ended" && event.egressInfo) {
       const egress = event.egressInfo
-      const roomName = egress.roomName
-      console.log("[webhook] egress_ended:", egress.egressId, "status:", egress.status)
+
+      // Pour web egress, roomName peut être vide — extraire depuis l'URL
+      let roomName = egress.roomName
+      if (!roomName && egress.request?.case === "web") {
+        const url = (egress.request.value as any)?.url ?? ""
+        const match = url.match(/roomName=([^&]+)/)
+        if (match) roomName = decodeURIComponent(match[1])
+      }
+      console.log("[webhook] egress_ended:", egress.egressId, "status:", egress.status, "room:", roomName)
 
       const fileResults = egress.fileResults
       if (fileResults && fileResults.length > 0) {

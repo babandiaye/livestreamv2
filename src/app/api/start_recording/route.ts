@@ -26,16 +26,17 @@ export async function POST(req: Request) {
       output: { case: "s3", value: s3 },
     } as any)
 
-    const info = await egressClient.startRoomCompositeEgress(
-      session.room_name,
+    // Layout custom — cam + chat + partage écran
+    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL!
+    const layoutUrl = `${baseUrl}/egress-layout?roomName=${encodeURIComponent(session.room_name)}`
+
+    const info = await egressClient.startWebEgress(
+      layoutUrl,
       fileOutput,
-      {
-        layout: "speaker-dark",
-        encodingOptions: EncodingOptionsPreset.H264_1080P_30,
-      }
+      { encodingOptions: EncodingOptionsPreset.H264_1080P_30 }
     )
 
-    console.log("[start_recording] egress started:", info.egressId)
+    console.log("[start_recording] web egress started:", info.egressId, "url:", layoutUrl)
     return Response.json({ egress_id: info.egressId })
   } catch (err) {
     console.error("start_recording error:", err)
