@@ -1,15 +1,16 @@
-import { EgressClient, EncodedFileOutput, EncodedFileType, S3Upload, EncodingOptionsPreset } from "livekit-server-sdk";
-import { getSessionFromReq } from "@/lib/controller";
+import { EgressClient, EncodedFileOutput, EncodedFileType, S3Upload, EncodingOptionsPreset } from "livekit-server-sdk"
+import { getSessionFromReq } from "@/lib/controller"
+import { prisma } from "@/lib/prisma"
 
 const egressClient = new EgressClient(
   process.env.LIVEKIT_WS_URL!.replace("wss://", "https://").replace("ws://", "http://"),
   process.env.LIVEKIT_API_KEY!,
   process.env.LIVEKIT_API_SECRET!
-);
+)
 
 export async function POST(req: Request) {
   try {
-    const session = await getSessionFromReq(req);
+    const session = await getSessionFromReq(req)
 
     const s3 = new S3Upload({
       accessKey: process.env.S3_ACCESS_KEY!,
@@ -18,13 +19,13 @@ export async function POST(req: Request) {
       region: process.env.S3_REGION || "us-east-1",
       bucket: process.env.S3_BUCKET!,
       forcePathStyle: true,
-    });
+    })
 
     const fileOutput = new EncodedFileOutput({
       fileType: EncodedFileType.MP4,
       filepath: `webinaire/${session.room_name}-{time}`,
       output: { case: "s3", value: s3 },
-    } as any);
+    } as any)
 
     const info = await egressClient.startRoomCompositeEgress(
       session.room_name,
@@ -33,11 +34,30 @@ export async function POST(req: Request) {
         layout: "speaker-dark",
         encodingOptions: EncodingOptionsPreset.H264_1080P_30,
       }
-    );
+    )
 
-    return Response.json({ egress_id: info.egressId });
+    // Créer le recording PROCESSING immédiatement
+    const dbSession = await prisma.session.findUnique({
+      where: { roomName: session.room_name },
+    })
+    if (dbSession) {
+      await prisma.recording.create({
+        data: {
+          sessionId: dbSession.id,
+          s3Key: "",
+          s3Bucket: process.env.S3_BUCKET ?? "preprod-webinairerecordings",
+          filename: "Enregistrement en cours…",
+          egressId: info.egressId,
+          status: "PROCESSING",
+          startedAt: new Date(),
+        },
+      })
+    }
+
+    console.log("[start_recording] egress started:", info.egressId)
+    return Response.json({ egress_id: info.egressId })
   } catch (err) {
-    console.error("start_recording error:", err);
-    return new Response(err instanceof Error ? err.message : "Error", { status: 500 });
+    console.error("start_recording error:", err)
+    return new Response(err instanceof Error ? err.message : "Error", { status: 500 })
   }
 }

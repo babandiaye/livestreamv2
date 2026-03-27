@@ -10,7 +10,7 @@ type Room = {
 }
 type Recording = {
   id: string; filename: string; s3Key: string; duration: number | null
-  size: number | null; createdAt: string
+  size: number | null; createdAt: string; status?: string
   session: { id: string; title: string; roomName: string; creator: { name: string; email: string } }
 }
 type EnrolledUser = { id: string; userId: string; name: string; email: string; role: string; enrolledAt: string }
@@ -602,7 +602,11 @@ export default function ModeratorClient({ user }: { user: User }) {
                               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0065b1" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M10 8l6 4-6 4V8z"/></svg>
                             </div>
                             <div style={{ flex: 1, minWidth: 0 }}>
-                              <div style={{ fontSize: 14, fontWeight: 600, color: "#1a1a2e", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{rec.filename}</div>
+                              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                <div style={{ fontSize: 14, fontWeight: 600, color: "#1a1a2e", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{rec.filename}</div>
+                                {rec.status === "PROCESSING" && <span style={{ fontSize: 11, fontWeight: 600, background: "#fef3c7", color: "#92400e", padding: "2px 8px", borderRadius: 20, whiteSpace: "nowrap" }}>⏳ En cours</span>}
+                                {rec.status === "FAILED" && <span style={{ fontSize: 11, fontWeight: 600, background: "#fee2e2", color: "#b91c1c", padding: "2px 8px", borderRadius: 20, whiteSpace: "nowrap" }}>✗ Échec</span>}
+                              </div>
                               <div style={{ display: "flex", gap: 10, marginTop: 3, flexWrap: "wrap" }}>
                                 <span style={{ fontSize: 13, color: "#9ca3af" }}>🏠 {rec.session.title}</span>
                                 {rec.duration != null && <span style={{ fontSize: 13, color: "#9ca3af" }}>⏱ {formatDuration(rec.duration)}</span>}
@@ -611,12 +615,14 @@ export default function ModeratorClient({ user }: { user: User }) {
                               </div>
                             </div>
                             <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
-                              <button onClick={() => setPlayingKey(playingKey === rec.s3Key ? null : rec.s3Key)}
-                                style={{ padding: "5px 12px", background: "#0065b1", color: "white", border: "none", borderRadius: 7, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
-                                {playingKey === rec.s3Key ? "✖ Fermer" : "▶ Voir"}
-                              </button>
-                              <a href={`/api/download-recording?key=${encodeURIComponent(rec.s3Key)}`} target="_blank" rel="noopener noreferrer"
-                                style={{ padding: "5px 12px", background: "white", color: "#2fb344", border: "1px solid #2fb344", borderRadius: 7, fontSize: 13, textDecoration: "none", fontFamily: "inherit" }}>⬇ Télécharger</a>
+                              {rec.status !== "PROCESSING" && rec.status !== "FAILED" && <>
+                                <button onClick={() => setPlayingKey(playingKey === rec.s3Key ? null : rec.s3Key)}
+                                  style={{ padding: "5px 12px", background: "#0065b1", color: "white", border: "none", borderRadius: 7, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
+                                  {playingKey === rec.s3Key ? "✖ Fermer" : "▶ Voir"}
+                                </button>
+                                <a href={`/api/download-recording?key=${encodeURIComponent(rec.s3Key)}`} target="_blank" rel="noopener noreferrer"
+                                  style={{ padding: "5px 12px", background: "white", color: "#2fb344", border: "1px solid #2fb344", borderRadius: 7, fontSize: 13, textDecoration: "none", fontFamily: "inherit" }}>⬇ Télécharger</a>
+                              </>}
                             </div>
                           </div>
                           {playingKey === rec.s3Key && (
