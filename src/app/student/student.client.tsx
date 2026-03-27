@@ -94,14 +94,8 @@ export default function StudentClient({
       {/* ── SIDEBAR ── */}
       <div style={{ width: 210, flexShrink: 0, background: "white", borderRight: "1px solid #e2e8f0", display: "flex", flexDirection: "column", position: "fixed", top: 0, left: 0, bottom: 0, zIndex: 50, transition: "transform .25s ease" }} className={`st-sidebar-mobile${sidebarOpen ? " open" : ""}`}>
         {/* Logo */}
-        <div style={{ padding: "16px 14px 12px", borderBottom: "1px solid #f0f7ff", display: "flex", alignItems: "center", gap: 8 }}>
-          <div style={{ width: 30, height: 30, borderRadius: 7, background: "#0065b1", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><path d="M15 10l4.553-2.069A1 1 0 0121 8.87v6.259a1 1 0 01-1.447.894L15 14"/><rect x="3" y="6" width="12" height="12" rx="2"/></svg>
-          </div>
-          <div>
-            <div style={{ fontWeight: 600, fontSize: 14, color: "#1a1a2e" }}>UN-CHK</div>
-            <div style={{ fontSize: 11, color: "#9ca3af" }}>Webinaire</div>
-          </div>
+        <div style={{ padding: "12px 14px", borderBottom: "1px solid #f0f7ff", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <img src="/logo-unchk.png" alt="UN-CHK" style={{ height: "38px", objectFit: "contain", maxWidth: "160px" }} />
         </div>
 
         {/* Liste des salles */}
