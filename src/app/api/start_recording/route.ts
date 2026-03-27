@@ -1,6 +1,5 @@
 import { EgressClient, EncodedFileOutput, EncodedFileType, S3Upload, EncodingOptionsPreset } from "livekit-server-sdk"
 import { getSessionFromReq } from "@/lib/controller"
-import { prisma } from "@/lib/prisma"
 
 const egressClient = new EgressClient(
   process.env.LIVEKIT_WS_URL!.replace("wss://", "https://").replace("ws://", "http://"),
@@ -35,24 +34,6 @@ export async function POST(req: Request) {
         encodingOptions: EncodingOptionsPreset.H264_1080P_30,
       }
     )
-
-    // Créer le recording PROCESSING immédiatement
-    const dbSession = await prisma.session.findUnique({
-      where: { roomName: session.room_name },
-    })
-    if (dbSession) {
-      await prisma.recording.create({
-        data: {
-          sessionId: dbSession.id,
-          s3Key: "",
-          s3Bucket: process.env.S3_BUCKET ?? "preprod-webinairerecordings",
-          filename: "Enregistrement en cours…",
-          egressId: info.egressId,
-          status: "PROCESSING",
-          startedAt: new Date(),
-        },
-      })
-    }
 
     console.log("[start_recording] egress started:", info.egressId)
     return Response.json({ egress_id: info.egressId })
