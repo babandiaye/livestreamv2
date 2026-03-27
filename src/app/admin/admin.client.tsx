@@ -5,7 +5,7 @@ import { signOut } from "next-auth/react"
 
 type User = { id: string; name: string; email: string; role: string; sessionCount: number; createdAt: string }
 type Room = { id: string; title: string; roomName: string; status: string; createdAt: string; creator: { name: string; email: string }; enrollments: number; recordings: number }
-type Recording = { id: string; filename: string; s3Key: string; duration: number | null; size: number | null; createdAt: string; session: { id: string; title: string; roomName: string; creator: { name: string; email: string } } }
+type Recording = { id: string; filename: string; s3Key: string; duration: number | null; size: number | null; createdAt: string; status?: string; session: { id: string; title: string; roomName: string; creator: { name: string; email: string } } }
 type EnrolledUser = { id: string; userId: string; name: string; email: string; role: string; enrolledAt: string }
 type SearchUser = { id: string; name: string; email: string; role: string }
 type ImportResult = { summary: { total: number; created: number; enrolled: number; skipped: number }; skipped: string[] }
@@ -579,12 +579,14 @@ export default function AdminClient({ user }: { user: { name?: string | null; em
                               </div>
                             </div>
                             <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
-                              <button onClick={() => setPlayingKey(playingKey === rec.s3Key ? null : rec.s3Key)}
-                                style={{ padding: "5px 12px", background: "#0065b1", color: "white", border: "none", borderRadius: 6, fontSize: 14, cursor: "pointer", fontFamily: "inherit" }}>
-                                {playingKey === rec.s3Key ? "✖ Fermer" : "▶ Voir"}
-                              </button>
-                              <a href={`/api/download-recording?key=${encodeURIComponent(rec.s3Key)}`} target="_blank" rel="noopener noreferrer"
-                                style={{ padding: "5px 12px", background: "white", color: "#2fb344", border: "1px solid #2fb344", borderRadius: 6, fontSize: 14, textDecoration: "none", fontFamily: "inherit" }}>⬇</a>
+                              {rec.status !== "PROCESSING" && rec.status !== "FAILED" && <>
+                                <button onClick={() => setPlayingKey(playingKey === rec.s3Key ? null : rec.s3Key)}
+                                  style={{ padding: "5px 12px", background: "#0065b1", color: "white", border: "none", borderRadius: 6, fontSize: 14, cursor: "pointer", fontFamily: "inherit" }}>
+                                  {playingKey === rec.s3Key ? "✖ Fermer" : "▶ Voir"}
+                                </button>
+                                <a href={`/api/download-recording?key=${encodeURIComponent(rec.s3Key)}`} target="_blank" rel="noopener noreferrer"
+                                  style={{ padding: "5px 12px", background: "white", color: "#2fb344", border: "1px solid #2fb344", borderRadius: 6, fontSize: 14, textDecoration: "none", fontFamily: "inherit" }}>⬇</a>
+                              </>}
                               {user.role === "ADMIN" && (
                                 <button disabled={deletingRec === rec.id} onClick={() => deleteRecording(rec.id, rec.filename)}
                                   style={{ padding: "5px 10px", background: "white", color: "#e53e3e", border: "1px solid #e53e3e", borderRadius: 6, fontSize: 14, cursor: "pointer", fontFamily: "inherit", opacity: deletingRec === rec.id ? .5 : 1 }}>
