@@ -9,6 +9,8 @@ import { Chat } from "@/components/chat";
 import StreamingDialog from "@/components/streaming-dialog";
 import { ParticipantMetadata, RoomMetadata } from "@/lib/controller";
 import { useAuthToken } from "@/components/token-context";
+import dynamic from "next/dynamic";
+const Whiteboard = dynamic(() => import("@/components/whiteboard"), { ssr: false });
 
 export default function HostPage({
   authToken,
@@ -39,6 +41,7 @@ function HostRoom({ returnUrl = "/" }: { returnUrl?: string }) {
   const tracks = useTracks([Track.Source.Camera, Track.Source.ScreenShare, Track.Source.Microphone]);
 
   const [panel, setPanel] = useState<"chat" | "participants" | null>("participants");
+  const [showWhiteboard, setShowWhiteboard] = useState(false);
   const [shareOn, setShareOn] = useState(false);
   const [raisedHands, setRaisedHands] = useState<string[]>([]);
   const [inviting, setInviting] = useState<string | null>(null);
@@ -257,10 +260,22 @@ function HostRoom({ returnUrl = "/" }: { returnUrl?: string }) {
         </div>
       )}
 
-      <div className="h-body">
+      <div className="h-body" style={{ position: "relative" }}>
+        {showWhiteboard && (
+          <div style={{
+            position: "absolute", inset: 0, zIndex: 9999,
+            background: "#f8f9fa"
+          }}>
+            <Whiteboard readOnly={false} />
+          </div>
+        )}
         <div className="h-stage">
-          <div className="h-main-video">
-            {screenTrack ? (
+          <div className={`h-main-video${showWhiteboard ? " wb-active" : ""}`}>
+            {showWhiteboard ? (
+              <div style={{ position: "absolute", inset: 0, background: "#f8f9fa" }}>
+                <Whiteboard readOnly={false} />
+              </div>
+            ) : screenTrack ? (
               <VideoTrack trackRef={screenTrack} className="h-video-el" />
             ) : ingressCamTrack ? (
               <VideoTrack trackRef={ingressCamTrack} className="h-video-el" />
@@ -433,6 +448,13 @@ function HostRoom({ returnUrl = "/" }: { returnUrl?: string }) {
           </div>
 
           <div className="h-ctrl-btn-wrap">
+            <button className={`h-ctrl-btn${showWhiteboard ? " active" : ""}`} onClick={() => setShowWhiteboard(!showWhiteboard)}>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 9l6 6M15 9l-6 6"/></svg>
+            </button>
+            <span className="h-ctrl-label">Tableau</span>
+          </div>
+
+          <div className="h-ctrl-btn-wrap">
             <button className={`h-ctrl-btn${showEmojiPicker ? " active" : ""}`} onClick={() => setShowEmojiPicker(!showEmojiPicker)}>
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
             </button>
@@ -517,6 +539,7 @@ function HostRoom({ returnUrl = "/" }: { returnUrl?: string }) {
         .h-body{display:flex;flex:1;overflow:hidden;}
         .h-stage{flex:1;display:flex;flex-direction:column;overflow:hidden;position:relative;}
         .h-main-video{flex:1;background:#070d14;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden;}
+
         .h-video-el{width:100%;height:100%;object-fit:contain;}
         .h-avatar-big{width:96px;height:96px;border-radius:50%;background:linear-gradient(135deg,#3b82f6,#1d4ed8);display:flex;align-items:center;justify-content:center;font-size:2.5rem;font-weight:700;color:white;box-shadow:0 0 40px rgba(59,130,246,.3);}
         .h-you-badge{position:absolute;top:12px;left:12px;background:rgba(59,130,246,.9);color:white;padding:3px 10px;border-radius:5px;font-size:0.72rem;font-weight:600;}
