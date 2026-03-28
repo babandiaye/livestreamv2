@@ -62,7 +62,7 @@ function EgressRoom() {
         if (!canvas) return
         const ctx = canvas.getContext("2d")
         if (!ctx) return
-        if (ev.type === "clear") { ctx.clearRect(0, 0, canvas.width, canvas.height); setShowWhiteboard(false); return }
+        if (ev.type === "clear") { ctx.clearRect(0, 0, canvas.width, canvas.height); return }
         setShowWhiteboard(true)
         if (ev.type === "text" && ev.text && ev.tx !== undefined) {
           ctx.font = `${ev.fontSize ?? 20}px sans-serif`
@@ -194,9 +194,34 @@ function EgressRoom() {
           </div>
         )}
 
+        {/* Canvas tableau blanc — toujours monté, visible si showWhiteboard */}
+        <canvas
+          ref={canvasRef}
+          width={1920}
+          height={1080}
+          style={{
+            position: "absolute", inset: 0, zIndex: 20,
+            width: "100%", height: "100%",
+            background: "white",
+            display: showWhiteboard ? "block" : "none",
+          }}
+        />
+
+        {/* PiP cam animateur quand tableau blanc actif */}
+        {showWhiteboard && mainCamTrack && (
+          <div style={{
+            position: "absolute", bottom: 20, right: 20, zIndex: 30,
+            width: 200, height: 125, borderRadius: 10, overflow: "hidden",
+            border: "2px solid #0065b1", background: "#1e2d3d",
+          }}>
+            <VideoTrack trackRef={mainCamTrack}
+              style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+          </div>
+        )}
+
         {/* Badge EN DIRECT */}
         <div style={{
-          position: "absolute", top: 16, left: 16,
+          position: "absolute", top: 16, left: 16, zIndex: 40,
           display: "flex", alignItems: "center", gap: 6,
           background: "rgba(239,68,68,.15)",
           border: "1px solid rgba(239,68,68,.4)",
@@ -215,7 +240,7 @@ function EgressRoom() {
         {/* Logo UN-CHK */}
         <div style={{
           position: "absolute", top: 16, right: 16,
-          opacity: 0.7,
+          opacity: 0.7, zIndex: 40,
         }}>
           <img src="/logo-unchk.png" alt="UN-CHK"
             style={{ height: "28px", objectFit: "contain" }} />
