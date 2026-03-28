@@ -7,6 +7,8 @@ import { TokenContext } from "@/components/token-context";
 import { Chat } from "@/components/chat";
 import { JoinStreamResponse, ParticipantMetadata, RoomMetadata } from "@/lib/controller";
 import { useAuthToken } from "@/components/token-context";
+import dynamic from "next/dynamic";
+const Whiteboard = dynamic(() => import("@/components/whiteboard"), { ssr: false });
 
 function JoinForm({ roomName, onJoin }: {
   roomName: string;
@@ -118,6 +120,7 @@ function ViewerRoom({ returnUrl = "/" }: { returnUrl?: string }) {
   const tracks = useTracks([Track.Source.Camera, Track.Source.ScreenShare, Track.Source.Microphone]);
 
   const [panel, setPanel] = useState<"chat" | null>("chat");
+  const [showWhiteboard, setShowWhiteboard] = useState(false);
   const [raisingHand, setRaisingHand] = useState(false);
   const [shareOn, setShareOn] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
@@ -216,6 +219,19 @@ function ViewerRoom({ returnUrl = "/" }: { returnUrl?: string }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100dvh", background: "#0d1117", color: "#e6edf3", fontFamily: "'Google Sans','Segoe UI',system-ui,sans-serif" }}>
 
+      {/* Tableau blanc — fixed plein écran */}
+      {showWhiteboard && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 99999, background: "white", display: "flex", flexDirection: "column" }}>
+          <div style={{ position: "absolute", top: 12, right: 16, zIndex: 100000 }}>
+            <button onClick={() => setShowWhiteboard(false)}
+              style={{ padding: "6px 14px", background: "#21262d", color: "#e6edf3", border: "1px solid #30363d", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
+              ✕ Fermer
+            </button>
+          </div>
+          <Whiteboard readOnly={true} />
+        </div>
+      )}
+
       {/* ── TOPBAR ── */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 20px", height: 54, background: "#161b22", borderBottom: "1px solid #21262d", flexShrink: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -250,7 +266,7 @@ function ViewerRoom({ returnUrl = "/" }: { returnUrl?: string }) {
       </div>
 
       {/* ── BODY ── */}
-      <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
+      <div style={{ display: "flex", flex: 1, overflow: "hidden", position: "relative" }}>
 
         {/* Stage */}
         <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", position: "relative", background: "#010409" }}>
@@ -407,6 +423,11 @@ function ViewerRoom({ returnUrl = "/" }: { returnUrl?: string }) {
                 icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg>}
               />
             )}
+
+            <CtrlBtn label="Tableau" active={showWhiteboard}
+              onClick={() => setShowWhiteboard(!showWhiteboard)}
+              icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 9l6 6M15 9l-6 6"/></svg>}
+            />
 
             <CtrlBtn label="Chat" active={panel === "chat"}
               onClick={() => setPanel(panel === "chat" ? null : "chat")}
