@@ -8,8 +8,8 @@ import {
 import { Track } from "livekit-client"
 import { useEffect, useRef, useState } from "react"
 
-const WB_TOPIC = "whiteboard"
-type DrawEvent = { type: "draw"|"clear"|"text"; tool?: string; color?: string; size?: number; x0?: number; y0?: number; x1?: number; y1?: number; text?: string; fontSize?: number; tx?: number; ty?: number }
+const WB_TOPIC = "whiteboard-v2"
+
 
 export default function EgressLayoutClient() {
   const params = useSearchParams()
@@ -49,37 +49,21 @@ function EgressRoom() {
   const participants = useParticipants()
   const { chatMessages } = useChat()
   const chatRef = useRef<HTMLDivElement>(null)
-  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const iframeRef = useRef<HTMLIFrameElement>(null)
   const [showWhiteboard, setShowWhiteboard] = useState(false)
   const room = useRoomContext()
 
-  // Écouter les events tableau blanc
+  // Écouter les events tableau blanc v2 (Excalidraw elements)
   useEffect(() => {
     const handleData = (payload: Uint8Array) => {
       try {
-        const ev: DrawEvent = JSON.parse(new TextDecoder().decode(payload))
-        const canvas = canvasRef.current
-        if (!canvas) return
-        const ctx = canvas.getContext("2d")
-        if (!ctx) return
-        if (ev.type === "clear") { ctx.clearRect(0, 0, canvas.width, canvas.height); return }
+        const msg = JSON.parse(new TextDecoder().decode(payload))
+        if (msg.topic !== WB_TOPIC) return
         setShowWhiteboard(true)
-        if (ev.type === "text" && ev.text && ev.tx !== undefined) {
-          ctx.font = `${ev.fontSize ?? 20}px sans-serif`
-          ctx.fillStyle = ev.color ?? "#000"
-          ctx.fillText(ev.text, ev.tx * canvas.width, ev.ty! * canvas.height)
-          return
-        }
-        if (ev.type === "draw" && ev.x0 !== undefined) {
-          ctx.strokeStyle = ev.tool === "eraser" ? "#ffffff" : (ev.color ?? "#000")
-          ctx.lineWidth = ev.size ?? 3
-          ctx.lineCap = "round"
-          ctx.lineJoin = "round"
-          ctx.beginPath()
-          ctx.moveTo(ev.x0 * canvas.width, ev.y0! * canvas.height)
-          ctx.lineTo(ev.x1! * canvas.width, ev.y1! * canvas.height)
-          ctx.stroke()
-        }
+        iframeRef.current?.contentWindow?.postMessage(
+          msg.clear ? { type: "wb-clear" } : { type: "wb-update", elements: msg.elements },
+          "*"
+        )
       } catch {}
     }
     room.on("dataReceived", handleData)
@@ -194,29 +178,34 @@ function EgressRoom() {
           </div>
         )}
 
-        {/* Canvas tableau blanc — toujours monté, visible si showWhiteboard */}
-        <canvas
-          ref={canvasRef}
-          width={1920}
-          height={1080}
-          style={{
-            position: "absolute", inset: 0, zIndex: 20,
-            width: "100%", height: "100%",
-            background: "white",
-            display: showWhiteboard ? "block" : "none",
-          }}
-        />
-
-        {/* PiP cam animateur quand tableau blanc actif */}
-        {showWhiteboard && mainCamTrack && (
-          <div style={{
-            position: "absolute", bottom: 20, right: 20, zIndex: 30,
-            width: 200, height: 125, borderRadius: 10, overflow: "hidden",
-            border: "2px solid #0065b1", background: "#1e2d3d",
-          }}>
-            <VideoTrack trackRef={mainCamTrack}
-              style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+        {/* Iframe tableau blanc Excalidraw — visible si showWhiteboard */}
+        {showWhiteboard && (
+          <div style={{ position: "absolute", inset: 0, zIndex: 20, background: "white" }}>
+            <iframe
+              ref={iframeRef}
+              src="/whiteboard.html?readonly=true"
+              style={{ width: "100%", height: "100%", border: "none", display: "block" }}
+            />
+            {/* PiP cam animateur */}
+            {mainCamTrack && (
+              <div style={{
+                position: "absolute", bottom: 20, right: 20, zIndex: 30,
+                width: 200, height: 125, borderRadius: 10, overflow: "hidden",
+                border: "2px solid #0065b1", background: "#1e2d3d",
+              }}>
+                <VideoTrack trackRef={mainCamTrack}
+                  style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+              </div>
+            )}
           </div>
+        )}
+        {/* iframe caché pour recevoir les messages même avant affichage */}
+        {!showWhiteboard && (
+          <iframe
+            ref={iframeRef}
+            src="/whiteboard.html?readonly=true"
+            style={{ position: "absolute", width: 1, height: 1, opacity: 0, pointerEvents: "none" }}
+          />
         )}
 
         {/* Badge EN DIRECT */}
