@@ -8,7 +8,41 @@ import {
 import { Track } from "livekit-client"
 import { useEffect, useRef, useState } from "react"
 
-const WB_TOPIC = "whiteboard-v2"
+const WB_TOPIC = "wb"
+
+type WBEvent = { v: 1; type: "draw"|"clear"|"text"; tool?: string; color?: string; size?: number; x0?: number; y0?: number; x1?: number; y1?: number; text?: string; fontSize?: number; tx?: number; ty?: number }
+type WBInit  = { v: 1; type: "init"; events: WBEvent[] }
+type WBMsg   = WBEvent | WBInit
+
+function replayEvent(ctx: CanvasRenderingContext2D, ev: WBEvent) {
+  if (ev.type === "clear") { ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height); return }
+  if (ev.type === "text" && ev.text && ev.tx !== undefined && ev.ty !== undefined) {
+    ctx.save()
+    ctx.font = `${ev.fontSize ?? 20}px sans-serif`
+    ctx.fillStyle = ev.color ?? "#1a1a2e"
+    ctx.fillText(ev.text, ev.tx * ctx.canvas.width, ev.ty * ctx.canvas.height)
+    ctx.restore()
+    return
+  }
+  if (ev.type === "draw" && ev.x0 !== undefined) {
+    ctx.save()
+    if (ev.tool === "eraser") {
+      ctx.globalCompositeOperation = "destination-out"
+      ctx.strokeStyle = "rgba(0,0,0,1)"
+    } else {
+      ctx.globalCompositeOperation = "source-over"
+      ctx.strokeStyle = ev.color ?? "#1a1a2e"
+    }
+    ctx.lineWidth = ev.size ?? 3
+    ctx.lineCap = "round"
+    ctx.lineJoin = "round"
+    ctx.beginPath()
+    ctx.moveTo(ev.x0 * ctx.canvas.width, ev.y0! * ctx.canvas.height)
+    ctx.lineTo(ev.x1! * ctx.canvas.width, ev.y1! * ctx.canvas.height)
+    ctx.stroke()
+    ctx.restore()
+  }
+}
 
 
 export default function EgressLayoutClient() {
@@ -49,21 +83,30 @@ function EgressRoom() {
   const participants = useParticipants()
   const { chatMessages } = useChat()
   const chatRef = useRef<HTMLDivElement>(null)
-  const iframeRef = useRef<HTMLIFrameElement>(null)
+  const canvasRef = useRef<HTMLCanvasElement>(null)
   const [showWhiteboard, setShowWhiteboard] = useState(false)
   const room = useRoomContext()
 
-  // Écouter les events tableau blanc v2 (Excalidraw elements)
+  // Recevoir events tableau blanc
   useEffect(() => {
     const handleData = (payload: Uint8Array) => {
       try {
-        const msg = JSON.parse(new TextDecoder().decode(payload))
-        if (msg.topic !== WB_TOPIC) return
+        const msg: WBMsg = JSON.parse(new TextDecoder().decode(payload))
+        if (!msg || msg.v !== 1) return
+        const canvas = canvasRef.current
+        if (!canvas) return
+        const ctx = canvas.getContext("2d")!
+
+        if (msg.type === "init") {
+          ctx.clearRect(0, 0, canvas.width, canvas.height)
+          for (const ev of msg.events) replayEvent(ctx, ev)
+          if (msg.events.length > 0) setShowWhiteboard(true)
+          return
+        }
+
+        if (msg.type === "clear") { replayEvent(ctx, msg); return }
+        replayEvent(ctx, msg)
         setShowWhiteboard(true)
-        iframeRef.current?.contentWindow?.postMessage(
-          msg.clear ? { type: "wb-clear" } : { type: "wb-update", elements: msg.elements },
-          "*"
-        )
       } catch {}
     }
     room.on("dataReceived", handleData)
@@ -178,34 +221,22 @@ function EgressRoom() {
           </div>
         )}
 
-        {/* Iframe tableau blanc Excalidraw — visible si showWhiteboard */}
-        {showWhiteboard && (
-          <div style={{ position: "absolute", inset: 0, zIndex: 20, background: "white" }}>
-            <iframe
-              ref={iframeRef}
-              src="/whiteboard.html?readonly=true"
-              style={{ width: "100%", height: "100%", border: "none", display: "block" }}
-            />
-            {/* PiP cam animateur */}
-            {mainCamTrack && (
-              <div style={{
-                position: "absolute", bottom: 20, right: 20, zIndex: 30,
-                width: 200, height: 125, borderRadius: 10, overflow: "hidden",
-                border: "2px solid #0065b1", background: "#1e2d3d",
-              }}>
-                <VideoTrack trackRef={mainCamTrack}
-                  style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-              </div>
-            )}
+        {/* Canvas tableau blanc — toujours monté */}
+        <canvas
+          ref={canvasRef}
+          width={1920} height={1080}
+          style={{
+            position: "absolute", inset: 0, zIndex: 20,
+            width: "100%", height: "100%",
+            background: "white",
+            display: showWhiteboard ? "block" : "none",
+          }}
+        />
+        {/* PiP cam quand tableau blanc actif */}
+        {showWhiteboard && mainCamTrack && (
+          <div style={{ position: "absolute", bottom: 20, right: 20, zIndex: 30, width: 200, height: 125, borderRadius: 10, overflow: "hidden", border: "2px solid #0065b1" }}>
+            <VideoTrack trackRef={mainCamTrack} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
           </div>
-        )}
-        {/* iframe caché pour recevoir les messages même avant affichage */}
-        {!showWhiteboard && (
-          <iframe
-            ref={iframeRef}
-            src="/whiteboard.html?readonly=true"
-            style={{ position: "absolute", width: 1, height: 1, opacity: 0, pointerEvents: "none" }}
-          />
         )}
 
         {/* Badge EN DIRECT */}
