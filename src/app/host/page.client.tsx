@@ -270,12 +270,8 @@ function HostRoom({ returnUrl = "/" }: { returnUrl?: string }) {
           </div>
         )}
         <div className="h-stage">
-          <div className={`h-main-video${showWhiteboard ? " wb-active" : ""}`}>
-            {showWhiteboard ? (
-              <div style={{ position: "absolute", inset: 0, background: "#f8f9fa" }}>
-                <Whiteboard readOnly={false} />
-              </div>
-            ) : screenTrack ? (
+          <div className="h-main-video">
+            {screenTrack ? (
               <VideoTrack trackRef={screenTrack} className="h-video-el" />
             ) : ingressCamTrack ? (
               <VideoTrack trackRef={ingressCamTrack} className="h-video-el" />
@@ -536,7 +532,7 @@ function HostRoom({ returnUrl = "/" }: { returnUrl?: string }) {
         .h-rec-indicator{width:7px;height:7px;border-radius:50%;background:#ef4444;animation:pulse 1s ease-in-out infinite;flex-shrink:0;}
         @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
         @keyframes spin{to{transform:rotate(360deg)}}
-        .h-body{display:flex;flex:1;overflow:hidden;}
+        .h-body{display:flex;flex:1;overflow:hidden;position:relative;}
         .h-stage{flex:1;display:flex;flex-direction:column;overflow:hidden;position:relative;}
         .h-main-video{flex:1;background:#070d14;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden;}
 

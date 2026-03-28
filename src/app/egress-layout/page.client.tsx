@@ -3,10 +3,13 @@
 import { useSearchParams } from "next/navigation"
 import {
   LiveKitRoom, useTracks, useParticipants,
-  VideoTrack, AudioTrack, useChat,
+  VideoTrack, AudioTrack, useChat, useRoomContext,
 } from "@livekit/components-react"
 import { Track } from "livekit-client"
 import { useEffect, useRef, useState } from "react"
+
+const WB_TOPIC = "whiteboard"
+type DrawEvent = { type: "draw"|"clear"|"text"; tool?: string; color?: string; size?: number; x0?: number; y0?: number; x1?: number; y1?: number; text?: string; fontSize?: number; tx?: number; ty?: number }
 
 export default function EgressLayoutClient() {
   const params = useSearchParams()
@@ -46,6 +49,42 @@ function EgressRoom() {
   const participants = useParticipants()
   const { chatMessages } = useChat()
   const chatRef = useRef<HTMLDivElement>(null)
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const [showWhiteboard, setShowWhiteboard] = useState(false)
+  const room = useRoomContext()
+
+  // Écouter les events tableau blanc
+  useEffect(() => {
+    const handleData = (payload: Uint8Array) => {
+      try {
+        const ev: DrawEvent = JSON.parse(new TextDecoder().decode(payload))
+        const canvas = canvasRef.current
+        if (!canvas) return
+        const ctx = canvas.getContext("2d")
+        if (!ctx) return
+        if (ev.type === "clear") { ctx.clearRect(0, 0, canvas.width, canvas.height); setShowWhiteboard(false); return }
+        setShowWhiteboard(true)
+        if (ev.type === "text" && ev.text && ev.tx !== undefined) {
+          ctx.font = `${ev.fontSize ?? 20}px sans-serif`
+          ctx.fillStyle = ev.color ?? "#000"
+          ctx.fillText(ev.text, ev.tx * canvas.width, ev.ty! * canvas.height)
+          return
+        }
+        if (ev.type === "draw" && ev.x0 !== undefined) {
+          ctx.strokeStyle = ev.tool === "eraser" ? "#ffffff" : (ev.color ?? "#000")
+          ctx.lineWidth = ev.size ?? 3
+          ctx.lineCap = "round"
+          ctx.lineJoin = "round"
+          ctx.beginPath()
+          ctx.moveTo(ev.x0 * canvas.width, ev.y0! * canvas.height)
+          ctx.lineTo(ev.x1! * canvas.width, ev.y1! * canvas.height)
+          ctx.stroke()
+        }
+      } catch {}
+    }
+    room.on("dataReceived", handleData)
+    return () => { room.off("dataReceived", handleData) }
+  }, [room])
 
   const screenTrack = tracks.find(t => t.source === Track.Source.ScreenShare)
   const camTracks = tracks.filter(t => t.source === Track.Source.Camera)
