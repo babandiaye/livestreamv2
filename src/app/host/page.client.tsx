@@ -196,6 +196,21 @@ function HostRoom({ returnUrl = "/" }: { returnUrl?: string }) {
 
   return (
     <div className="h-root">
+      {showWhiteboard && (
+        <div style={{
+          position: "fixed", inset: 0, zIndex: 99999,
+          background: "white", display: "flex", flexDirection: "column"
+        }}>
+          {/* Bouton fermer */}
+          <div style={{ position: "absolute", top: 12, right: 16, zIndex: 100000 }}>
+            <button onClick={() => setShowWhiteboard(false)}
+              style={{ padding: "6px 14px", background: "#e53e3e", color: "white", border: "none", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: 6 }}>
+              ✕ Fermer le tableau
+            </button>
+          </div>
+          <Whiteboard readOnly={false} />
+        </div>
+      )}
       <div className="h-topbar">
         <div className="h-topbar-left">
           <div className="h-logo-wrap">
@@ -261,14 +276,6 @@ function HostRoom({ returnUrl = "/" }: { returnUrl?: string }) {
       )}
 
       <div className="h-body" style={{ position: "relative" }}>
-        {showWhiteboard && (
-          <div style={{
-            position: "absolute", inset: 0, zIndex: 9999,
-            background: "#f8f9fa"
-          }}>
-            <Whiteboard readOnly={false} />
-          </div>
-        )}
         <div className="h-stage">
           <div className="h-main-video">
             {screenTrack ? (

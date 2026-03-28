@@ -219,6 +219,19 @@ function ViewerRoom({ returnUrl = "/" }: { returnUrl?: string }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100dvh", background: "#0d1117", color: "#e6edf3", fontFamily: "'Google Sans','Segoe UI',system-ui,sans-serif" }}>
 
+      {/* Tableau blanc — fixed plein écran */}
+      {showWhiteboard && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 99999, background: "white", display: "flex", flexDirection: "column" }}>
+          <div style={{ position: "absolute", top: 12, right: 16, zIndex: 100000 }}>
+            <button onClick={() => setShowWhiteboard(false)}
+              style={{ padding: "6px 14px", background: "#21262d", color: "#e6edf3", border: "1px solid #30363d", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
+              ✕ Fermer
+            </button>
+          </div>
+          <Whiteboard readOnly={true} />
+        </div>
+      )}
+
       {/* ── TOPBAR ── */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 20px", height: 54, background: "#161b22", borderBottom: "1px solid #21262d", flexShrink: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -254,11 +267,6 @@ function ViewerRoom({ returnUrl = "/" }: { returnUrl?: string }) {
 
       {/* ── BODY ── */}
       <div style={{ display: "flex", flex: 1, overflow: "hidden", position: "relative" }}>
-        {showWhiteboard && (
-          <div style={{ position: "absolute", inset: 0, zIndex: 9999, background: "#f8f9fa" }}>
-            <Whiteboard readOnly={true} />
-          </div>
-        )}
 
         {/* Stage */}
         <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", position: "relative", background: "#010409" }}>
