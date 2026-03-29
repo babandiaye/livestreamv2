@@ -289,6 +289,7 @@ Depuis la v4.3.0, l'enregistrement capture en une seule vidéo MP4 :
 - **Partage d'écran** au centre (contenu principal)
 - **Caméra animateur** en PiP bas droite
 - **Chat en direct** dans un panneau latéral
+- **Tableau blanc** synchronisé via data channels LiveKit
 - **Audio** de tous les participants sur scène
 
 Le flux technique :
@@ -298,7 +299,8 @@ Bouton "Enregistrer" → start_recording API
   → Egress Chrome charge la page
   → /api/egress-token génère un token viewer caché
   → La page se connecte à la room LiveKit
-  → Enregistrement MP4 → MinIO S3
+  → Demande l'historique du tableau blanc (__wb_request_init__)
+  → Enregistrement MP4 1080p 60fps → MinIO S3
 ```
 
 Statuts de l'enregistrement :
@@ -375,6 +377,8 @@ etudiant@domaine.sn,Prénom,Nom
 | v4.1.0 | Page /watch redesign + logo + responsive mobile |
 | v4.2.0 | Statut enregistrement PROCESSING/READY/FAILED |
 | v4.3.0 | Egress layout custom cam+chat+écran + webhook web egress |
+| v4.4.0 | Tableau blanc collaboratif canvas HTML5 + egress sync |
+| v4.5.0 | Tableau blanc intégré zone principale host/watch/egress + qualité enregistrement 1080p 60fps 4.5Mbps |
 
 ---
 
