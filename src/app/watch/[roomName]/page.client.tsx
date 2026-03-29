@@ -37,12 +37,9 @@ function JoinForm({ roomName, onJoin }: {
   return (
     <div style={{ minHeight: "100dvh", background: "#f8fafd", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Google Sans','Segoe UI',system-ui,sans-serif" }}>
       <div style={{ background: "white", border: "1px solid #e2e8f0", borderRadius: 16, padding: "40px 36px", width: "100%", maxWidth: 420, display: "flex", flexDirection: "column", alignItems: "center", gap: 20, boxShadow: "0 4px 32px rgba(0,0,0,.08)" }}>
-        {/* Logo */}
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
           <img src="/logo-unchk.png" alt="UN-CHK" style={{ height: "40px", objectFit: "contain" }} onError={(e) => (e.currentTarget.style.display="none")} />
         </div>
-
-        {/* Titre */}
         <div style={{ textAlign: "center" }}>
           <div style={{ fontSize: 20, fontWeight: 700, color: "#1a1a2e", marginBottom: 6 }}>Rejoindre la session</div>
           <div style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "#e8f4ff", color: "#0065b1", fontSize: 13, fontWeight: 500, padding: "4px 14px", borderRadius: 20, border: "1px solid #b8d9f5" }}>
@@ -50,8 +47,6 @@ function JoinForm({ roomName, onJoin }: {
             {decodeURIComponent(roomName)}
           </div>
         </div>
-
-        {/* Input */}
         <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: 6 }}>
           <label style={{ fontSize: 13, fontWeight: 600, color: "#374151" }}>Votre nom</label>
           <input
@@ -64,20 +59,17 @@ function JoinForm({ roomName, onJoin }: {
             onBlur={e => e.target.style.borderColor = "#e2e8f0"}
           />
         </div>
-
         {error && (
           <div style={{ width: "100%", background: "#fff0f0", border: "1px solid #fecaca", borderRadius: 8, padding: "8px 12px", fontSize: 13, color: "#b91c1c" }}>
             ⚠️ {error}
           </div>
         )}
-
         <button onClick={handleJoin} disabled={loading || !name.trim()}
           style={{ width: "100%", padding: "12px", background: "#0065b1", color: "white", border: "none", borderRadius: 9, fontSize: 15, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", opacity: loading || !name.trim() ? .5 : 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
           {loading ? (
             <><span style={{ width: 16, height: 16, border: "2px solid rgba(255,255,255,.3)", borderTopColor: "white", borderRadius: "50%", animation: "jf-spin .7s linear infinite", display: "inline-block" }} />Connexion…</>
           ) : "Rejoindre en tant que spectateur →"}
         </button>
-
         <a href="/" style={{ fontSize: 13, color: "#9ca3af", textDecoration: "none" }}>← Retour à l&apos;accueil</a>
       </div>
       <style>{`@keyframes jf-spin{to{transform:rotate(360deg)}}`}</style>
@@ -202,6 +194,9 @@ function ViewerRoom({ returnUrl = "/" }: { returnUrl?: string }) {
   const stageParts = participants.filter(p => p.identity !== localParticipant.identity && getMeta(p).invited_to_stage);
   const stageCamTracks = camTracks.filter(t => stageParts.some(p => p.identity === t.participant.identity) && t.participant.identity !== hostId);
 
+  // Détermine le contenu principal
+  const mainContent = showWhiteboard ? "whiteboard" : screenTrack ? "screen" : mainCamTrack ? "cam" : "avatar";
+
   if (sessionEnded) {
     return (
       <div style={{ height: "100dvh", background: "#f8fafd", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 16, fontFamily: "'Google Sans','Segoe UI',system-ui,sans-serif" }}>
@@ -219,23 +214,9 @@ function ViewerRoom({ returnUrl = "/" }: { returnUrl?: string }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100dvh", background: "#0d1117", color: "#e6edf3", fontFamily: "'Google Sans','Segoe UI',system-ui,sans-serif" }}>
 
-      {/* Tableau blanc — fixed plein écran */}
-      {showWhiteboard && (
-        <div style={{ position: "fixed", inset: 0, zIndex: 99999, background: "white", display: "flex", flexDirection: "column" }}>
-          <div style={{ position: "absolute", top: 12, right: 16, zIndex: 100000 }}>
-            <button onClick={() => setShowWhiteboard(false)}
-              style={{ padding: "6px 14px", background: "#21262d", color: "#e6edf3", border: "1px solid #30363d", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
-              ✕ Fermer
-            </button>
-          </div>
-          <Whiteboard readOnly={true} />
-        </div>
-      )}
-
       {/* ── TOPBAR ── */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 20px", height: 54, background: "#161b22", borderBottom: "1px solid #21262d", flexShrink: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          {/* Logo */}
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <img src="/logo-unchk.png" alt="UN-CHK" style={{ height: "28px", objectFit: "contain" }} onError={(e) => (e.currentTarget.style.display="none")} />
           </div>
@@ -271,11 +252,26 @@ function ViewerRoom({ returnUrl = "/" }: { returnUrl?: string }) {
         {/* Stage */}
         <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", position: "relative", background: "#010409" }}>
           <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", position: "relative" }}>
-            {screenTrack ? (
-              <VideoTrack trackRef={screenTrack} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
-            ) : mainCamTrack ? (
-              <VideoTrack trackRef={mainCamTrack} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
-            ) : (
+
+            {/* ── TABLEAU BLANC dans la zone principale ── */}
+            {mainContent === "whiteboard" && (
+              <div style={{ position: "absolute", inset: 0, background: "white" }}>
+                <Whiteboard readOnly={true} />
+              </div>
+            )}
+
+            {/* ── PARTAGE D'ÉCRAN ── */}
+            {mainContent === "screen" && (
+              <VideoTrack trackRef={screenTrack!} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+            )}
+
+            {/* ── CAMÉRA PRINCIPALE ── */}
+            {mainContent === "cam" && (
+              <VideoTrack trackRef={mainCamTrack!} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+            )}
+
+            {/* ── AVATAR (rien d'actif) ── */}
+            {mainContent === "avatar" && (
               <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14, color: "#484f58", textAlign: "center" }}>
                 <div style={{ width: 80, height: 80, borderRadius: "50%", background: "#161b22", border: "1px solid #21262d", display: "flex", alignItems: "center", justifyContent: "center" }}>
                   <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#30363d" strokeWidth="1.5"><path d="M15 10l4.553-2.069A1 1 0 0121 8.87v6.259a1 1 0 01-1.447.894L15 14"/><rect x="3" y="6" width="12" height="12" rx="2"/></svg>
@@ -285,15 +281,22 @@ function ViewerRoom({ returnUrl = "/" }: { returnUrl?: string }) {
               </div>
             )}
 
-            {/* Name tag */}
-            {mainCamTrack && !screenTrack && (
-              <div style={{ position: "absolute", bottom: 12, left: 12, background: "rgba(1,4,9,.75)", backdropFilter: "blur(4px)", color: "#e6edf3", fontSize: 13, padding: "4px 12px", borderRadius: 5, border: "1px solid #21262d" }}>
-                {mainCamTrack.participant.identity}
+            {/* Badge "Tableau blanc" quand actif */}
+            {mainContent === "whiteboard" && (
+              <div style={{ position: "absolute", top: 12, left: 12, background: "rgba(0,101,177,.85)", color: "white", fontSize: 12, fontWeight: 600, padding: "3px 10px", borderRadius: 5, zIndex: 10 }}>
+                🖊 Tableau blanc
               </div>
             )}
 
-            {/* PiP */}
-            {screenTrack && (
+            {/* Name tag caméra */}
+            {mainContent === "cam" && (
+              <div style={{ position: "absolute", bottom: 12, left: 12, background: "rgba(1,4,9,.75)", backdropFilter: "blur(4px)", color: "#e6edf3", fontSize: 13, padding: "4px 12px", borderRadius: 5, border: "1px solid #21262d" }}>
+                {mainCamTrack!.participant.identity}
+              </div>
+            )}
+
+            {/* PiP caméra principale quand partage d'écran ou tableau actif */}
+            {(mainContent === "screen" || mainContent === "whiteboard") && (
               <div style={{ position: "absolute", bottom: 16, right: 16, display: "flex", flexDirection: "column", gap: 8, zIndex: 10 }}>
                 {mainCamTrack && (
                   <div style={{ width: 180, height: 112, borderRadius: 9, overflow: "hidden", background: "#161b22", position: "relative", border: "2px solid #0065b1", boxShadow: "0 4px 20px rgba(0,0,0,.6)" }}>
@@ -310,8 +313,8 @@ function ViewerRoom({ returnUrl = "/" }: { returnUrl?: string }) {
               </div>
             )}
 
-            {/* Strip participants sur scène */}
-            {!screenTrack && stageCamTracks.length > 0 && (
+            {/* Strip participants sur scène (seulement quand cam principale) */}
+            {mainContent === "cam" && stageCamTracks.length > 0 && (
               <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, display: "flex", gap: 8, padding: 8, background: "rgba(13,17,23,.85)", overflowX: "auto" }}>
                 {stageCamTracks.map(t => (
                   <div key={t.participant.identity} style={{ width: 160, height: 100, borderRadius: 8, background: "#161b22", position: "relative", flexShrink: 0, overflow: "hidden" }}>
@@ -324,7 +327,7 @@ function ViewerRoom({ returnUrl = "/" }: { returnUrl?: string }) {
 
             {/* On Stage badge */}
             {onStage && (
-              <div style={{ position: "absolute", bottom: 16, left: "50%", transform: "translateX(-50%)", background: "rgba(63,185,80,.15)", border: "1px solid #3fb950", color: "#3fb950", padding: "8px 18px", borderRadius: 24, fontSize: 13, fontWeight: 600, display: "flex", alignItems: "center", gap: 10, backdropFilter: "blur(4px)" }}>
+              <div style={{ position: "absolute", bottom: 16, left: "50%", transform: "translateX(-50%)", background: "rgba(63,185,80,.15)", border: "1px solid #3fb950", color: "#3fb950", padding: "8px 18px", borderRadius: 24, fontSize: 13, fontWeight: 600, display: "flex", alignItems: "center", gap: 10, backdropFilter: "blur(4px)", zIndex: 20 }}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg>
                 Vous êtes sur scène
                 <button onClick={leaveStage} style={{ background: "rgba(248,81,73,.15)", border: "1px solid rgba(248,81,73,.4)", color: "#f85149", padding: "3px 10px", borderRadius: 6, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>Quitter</button>
@@ -371,7 +374,6 @@ function ViewerRoom({ returnUrl = "/" }: { returnUrl?: string }) {
       {/* ── CONTROLS ── */}
       <div style={{ background: "#161b22", borderTop: "1px solid #21262d", flexShrink: 0, padding: "10px 24px" }}>
         <div style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr", alignItems: "center" }}>
-          {/* Left — room info */}
           <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#8b949e" }}>
             <img src="/logo-unchk.png" alt="UN-CHK" style={{ height: "22px", objectFit: "contain" }} onError={(e) => (e.currentTarget.style.display="none")} />
             <span style={{ color: "#e6edf3", fontWeight: 500 }}>{room.name}</span>
@@ -380,7 +382,6 @@ function ViewerRoom({ returnUrl = "/" }: { returnUrl?: string }) {
             {participants.length}
           </div>
 
-          {/* Center — boutons */}
           <div style={{ display: "flex", alignItems: "flex-start", gap: 4, justifyContent: "center" }}>
             {onStage && (
               <CtrlBtn label="Micro" active={micOn} off={!micOn}

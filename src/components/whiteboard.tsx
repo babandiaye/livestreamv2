@@ -85,13 +85,11 @@ export default function Whiteboard({
       if (!container || !canvas) return
       const { width, height } = container.getBoundingClientRect()
       if (canvas.width === width && canvas.height === height) return
-      // Sauvegarder l'image
       const tmp = document.createElement("canvas")
       tmp.width = canvas.width; tmp.height = canvas.height
       tmp.getContext("2d")!.drawImage(canvas, 0, 0)
       canvas.width = Math.round(width)
       canvas.height = Math.round(height)
-      // Restaurer l'image
       canvas.getContext("2d")!.drawImage(tmp, 0, 0, canvas.width, canvas.height)
     }
     resize()
@@ -100,24 +98,38 @@ export default function Whiteboard({
     return () => ro.disconnect()
   }, [])
 
+  const sendInit = useCallback(() => {
+    if (readOnly) return
+    const init: WBInit = { v: 1, type: "init", events: eventStore.current }
+    localParticipant.publishData(
+      new TextEncoder().encode(JSON.stringify(init)),
+      { reliable: true }
+    )
+  }, [readOnly, localParticipant])
+
   // Recevoir données LiveKit
   useEffect(() => {
     const handleData = (payload: Uint8Array, participant: any) => {
       try {
-        const msg: WBMsg = JSON.parse(new TextDecoder().decode(payload))
+        // Signal de demande d'historique (vient de l'egress)
+        const raw = new TextDecoder().decode(payload)
+        if (raw === "__wb_request_init__") {
+          sendInit()
+          return
+        }
+
+        const msg: WBMsg = JSON.parse(raw)
         if (!msg || msg.v !== 1) return
         const canvas = canvasRef.current
         if (!canvas) return
         const ctx = canvas.getContext("2d")!
 
         if (msg.type === "init") {
-          // Rejouer tout l'historique
           ctx.clearRect(0, 0, canvas.width, canvas.height)
           for (const ev of msg.events) replayEvent(ctx, ev)
           return
         }
 
-        // Event normal
         replayEvent(ctx, msg as WBEvent)
         eventStore.current.push(msg as WBEvent)
       } catch {}
@@ -125,12 +137,7 @@ export default function Whiteboard({
 
     // Quand un nouveau participant rejoint — envoyer l'historique
     const handleParticipantConnected = () => {
-      if (readOnly) return
-      const init: WBInit = { v: 1, type: "init", events: eventStore.current }
-      localParticipant.publishData(
-        new TextEncoder().encode(JSON.stringify(init)),
-        { reliable: true }
-      )
+      sendInit()
     }
 
     room.on("dataReceived", handleData)
@@ -139,7 +146,7 @@ export default function Whiteboard({
       room.off("dataReceived", handleData)
       room.off("participantConnected", handleParticipantConnected)
     }
-  }, [room, readOnly, localParticipant])
+  }, [room, readOnly, localParticipant, sendInit])
 
   const broadcast = useCallback((ev: WBEvent) => {
     eventStore.current.push(ev)
@@ -219,11 +226,8 @@ export default function Whiteboard({
   return (
     <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", background: "white" }}>
 
-      {/* ── Toolbar ── */}
       {!readOnly && (
         <div style={{ height: toolbarH, display: "flex", alignItems: "center", gap: 8, padding: "0 16px", background: "#f8fafd", borderBottom: "1px solid #e2e8f0", flexShrink: 0, flexWrap: "wrap" }}>
-
-          {/* Outils */}
           {([
             { id: "pen"    as const, label: "✏️", title: "Crayon" },
             { id: "text"   as const, label: "T",  title: "Texte" },
@@ -239,7 +243,6 @@ export default function Whiteboard({
 
           <div style={{ width: 1, height: 32, background: "#e2e8f0" }} />
 
-          {/* Couleurs */}
           {COLORS.map(c => (
             <button key={c} onClick={() => { setColor(c); setTool("pen"); setTextMode(false) }}
               style={{ width: 24, height: 24, borderRadius: "50%", background: c, border: color === c && tool !== "eraser" && !textMode ? "3px solid #0065b1" : "2px solid #d1d5db", cursor: "pointer", flexShrink: 0 }} />
@@ -247,7 +250,6 @@ export default function Whiteboard({
 
           <div style={{ width: 1, height: 32, background: "#e2e8f0" }} />
 
-          {/* Tailles */}
           {SIZES.map(s => (
             <button key={s} onClick={() => setSize(s)}
               style={{ width: 32, height: 32, borderRadius: 8, border: `2px solid ${size === s ? "#0065b1" : "#e2e8f0"}`, background: size === s ? "#e8f4ff" : "white", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -264,7 +266,6 @@ export default function Whiteboard({
         </div>
       )}
 
-      {/* ── Canvas ── */}
       <div ref={containerRef} style={{ flex: 1, position: "relative", overflow: "hidden" }}>
         <canvas
           ref={canvasRef}
@@ -275,7 +276,6 @@ export default function Whiteboard({
           onPointerLeave={onPointerUp}
         />
 
-        {/* Input texte flottant */}
         {textPos && (
           <input
             ref={textInputRef}

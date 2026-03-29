@@ -79,6 +79,12 @@ function HostRoom({ returnUrl = "/" }: { returnUrl?: string }) {
     setShareOn(!shareOn);
   };
 
+  const toggleWhiteboard = () => {
+    const next = !showWhiteboard;
+    setShowWhiteboard(next);
+    sendChat?.(`__whiteboard_${next ? "open" : "close"}__`);
+  };
+
   const inviteToStage = async (identity: string) => {
     setInviting(identity);
     try {
@@ -194,23 +200,12 @@ function HostRoom({ returnUrl = "/" }: { returnUrl?: string }) {
   const stageCamTracks = camTracks.filter(t => stageParts.some(p => p.identity === t.participant.identity));
   const stageAudioTracks = tracks.filter(t => t.source === Track.Source.Microphone && t.participant.identity !== localParticipant.identity);
 
+  // Détermine le contenu principal
+  const mainContent = showWhiteboard ? "whiteboard" : screenTrack ? "screen" : ingressCamTrack ? "ingress" : localCamTrack ? "cam" : "avatar";
+
   return (
     <div className="h-root">
-      {showWhiteboard && (
-        <div style={{
-          position: "fixed", inset: 0, zIndex: 99999,
-          background: "white", display: "flex", flexDirection: "column"
-        }}>
-          {/* Bouton fermer */}
-          <div style={{ position: "absolute", top: 12, right: 16, zIndex: 100000 }}>
-            <button onClick={() => setShowWhiteboard(false)}
-              style={{ padding: "6px 14px", background: "#e53e3e", color: "white", border: "none", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: 6 }}>
-              ✕ Fermer le tableau
-            </button>
-          </div>
-          <Whiteboard readOnly={false} />
-        </div>
-      )}
+
       <div className="h-topbar">
         <div className="h-topbar-left">
           <div className="h-logo-wrap">
@@ -278,18 +273,48 @@ function HostRoom({ returnUrl = "/" }: { returnUrl?: string }) {
       <div className="h-body" style={{ position: "relative" }}>
         <div className="h-stage">
           <div className="h-main-video">
-            {screenTrack ? (
-              <VideoTrack trackRef={screenTrack} className="h-video-el" />
-            ) : ingressCamTrack ? (
-              <VideoTrack trackRef={ingressCamTrack} className="h-video-el" />
-            ) : localCamTrack ? (
-              <VideoTrack trackRef={localCamTrack} className="h-video-el" />
-            ) : (
+
+            {/* ── TABLEAU BLANC dans la zone principale ── */}
+            {mainContent === "whiteboard" && (
+              <div style={{ position: "absolute", inset: 0, background: "white" }}>
+                <Whiteboard readOnly={false} />
+              </div>
+            )}
+
+            {/* ── PARTAGE D'ÉCRAN ── */}
+            {mainContent === "screen" && (
+              <VideoTrack trackRef={screenTrack!} className="h-video-el" />
+            )}
+
+            {/* ── INGRESS OBS ── */}
+            {mainContent === "ingress" && (
+              <VideoTrack trackRef={ingressCamTrack!} className="h-video-el" />
+            )}
+
+            {/* ── CAMÉRA LOCALE ── */}
+            {mainContent === "cam" && (
+              <VideoTrack trackRef={localCamTrack!} className="h-video-el" />
+            )}
+
+            {/* ── AVATAR ── */}
+            {mainContent === "avatar" && (
               <div className="h-avatar-big">{localParticipant.identity.charAt(0).toUpperCase()}</div>
             )}
-            <div className="h-you-badge">Vous</div>
 
-            {screenTrack && (
+            {/* Badge "Vous" — masqué quand tableau actif */}
+            {mainContent !== "whiteboard" && (
+              <div className="h-you-badge">Vous</div>
+            )}
+
+            {/* Badge "Tableau blanc" quand actif */}
+            {mainContent === "whiteboard" && (
+              <div className="h-you-badge" style={{ background: "rgba(0,101,177,.85)" }}>
+                🖊 Tableau blanc
+              </div>
+            )}
+
+            {/* PiP caméra locale quand écran ou tableau actif */}
+            {(mainContent === "screen" || mainContent === "whiteboard") && (
               <div className="h-pip-container">
                 {localCamTrack && (
                   <div className="h-pip-tile">
@@ -311,7 +336,8 @@ function HostRoom({ returnUrl = "/" }: { returnUrl?: string }) {
             )}
           </div>
 
-          {!screenTrack && stageParts.length > 0 && (
+          {/* Strip participants sur scène (seulement quand pas d'écran ni tableau) */}
+          {mainContent !== "screen" && mainContent !== "whiteboard" && stageParts.length > 0 && (
             <div className="h-strip">
               {stageParts.map(p => {
                 const t = stageCamTracks.find(t => t.participant.identity === p.identity);
@@ -451,7 +477,7 @@ function HostRoom({ returnUrl = "/" }: { returnUrl?: string }) {
           </div>
 
           <div className="h-ctrl-btn-wrap">
-            <button className={`h-ctrl-btn${showWhiteboard ? " active" : ""}`} onClick={() => setShowWhiteboard(!showWhiteboard)}>
+            <button className={`h-ctrl-btn${showWhiteboard ? " active" : ""}`} onClick={toggleWhiteboard}>
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 9l6 6M15 9l-6 6"/></svg>
             </button>
             <span className="h-ctrl-label">Tableau</span>
@@ -542,10 +568,9 @@ function HostRoom({ returnUrl = "/" }: { returnUrl?: string }) {
         .h-body{display:flex;flex:1;overflow:hidden;position:relative;}
         .h-stage{flex:1;display:flex;flex-direction:column;overflow:hidden;position:relative;}
         .h-main-video{flex:1;background:#070d14;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden;}
-
         .h-video-el{width:100%;height:100%;object-fit:contain;}
         .h-avatar-big{width:96px;height:96px;border-radius:50%;background:linear-gradient(135deg,#3b82f6,#1d4ed8);display:flex;align-items:center;justify-content:center;font-size:2.5rem;font-weight:700;color:white;box-shadow:0 0 40px rgba(59,130,246,.3);}
-        .h-you-badge{position:absolute;top:12px;left:12px;background:rgba(59,130,246,.9);color:white;padding:3px 10px;border-radius:5px;font-size:0.72rem;font-weight:600;}
+        .h-you-badge{position:absolute;top:12px;left:12px;background:rgba(59,130,246,.9);color:white;padding:3px 10px;border-radius:5px;font-size:0.72rem;font-weight:600;z-index:10;}
         .h-pip-container{position:absolute;bottom:16px;right:16px;display:flex;flex-direction:column;gap:8px;z-index:10;}
         .h-pip-tile{width:160px;height:100px;border-radius:8px;overflow:hidden;background:#1e2d3d;position:relative;border:2px solid #3b82f6;box-shadow:0 4px 16px rgba(0,0,0,.5);}
         .h-pip-name{position:absolute;bottom:4px;left:6px;font-size:0.65rem;color:white;background:rgba(0,0,0,.7);padding:2px 6px;border-radius:3px;}
