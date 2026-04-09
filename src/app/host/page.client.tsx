@@ -50,12 +50,34 @@ function HostRoom({ returnUrl = "/" }: { returnUrl?: string }) {
   const [recording, setRecording] = useState(false);
   const [recordingLoading, setRecordingLoading] = useState(false);
   const [recordingWaiting, setRecordingWaiting] = useState(false);
+  const [recordingStartTime, setRecordingStartTime] = useState<number | null>(null);
+  const [recordingElapsed, setRecordingElapsed] = useState("00:00");
 
   const [streamingEgressId, setStreamingEgressId] = useState<string | null>(null);
   const [streaming, setStreaming] = useState(false);
   const [showStreamingDialog, setShowStreamingDialog] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [floatingEmojis, setFloatingEmojis] = useState<{id:number;emoji:string;x:number}[]>([]);
+
+  // Timer d'enregistrement — synchronisé avec le début réel de la capture egress
+  useEffect(() => {
+    if (!recording || !recordingStartTime) {
+      setRecordingElapsed("00:00");
+      return;
+    }
+    const interval = setInterval(() => {
+      const diff = Math.floor((Date.now() - recordingStartTime) / 1000);
+      const h = Math.floor(diff / 3600);
+      const m = Math.floor((diff % 3600) / 60);
+      const s = diff % 60;
+      setRecordingElapsed(
+        h > 0
+          ? `${h}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`
+          : `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`
+      );
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [recording, recordingStartTime]);
 
   const micOn = localParticipant.isMicrophoneEnabled;
   const camOn = localParticipant.isCameraEnabled;
@@ -126,10 +148,43 @@ function HostRoom({ returnUrl = "/" }: { returnUrl?: string }) {
       return null;
     }
 
+    // Étape 1 : Vérifier que le flux vidéo est réellement actif (pas juste "enabled")
+    // Poll toutes les 500ms, max 15 secondes
     setRecordingWaiting(true);
-    await new Promise(resolve => setTimeout(resolve, 3000));
-    setRecordingWaiting(false);
 
+    const checkSignalReady = (): Promise<boolean> => {
+      return new Promise((resolve) => {
+        let attempts = 0;
+        const maxAttempts = 30; // 30 × 500ms = 15 secondes max
+        const check = () => {
+          attempts++;
+          const hasActiveTrack = tracks.some(t => {
+            const isLocal = t.participant.identity === localParticipant.identity;
+            const isVideo =
+              t.source === Track.Source.Camera ||
+              t.source === Track.Source.ScreenShare;
+            return isLocal && isVideo && t.publication?.track && !t.publication.isMuted;
+          });
+          if (hasActiveTrack || hasWhiteboard) {
+            resolve(true);
+          } else if (attempts >= maxAttempts) {
+            resolve(false);
+          } else {
+            setTimeout(check, 500);
+          }
+        };
+        check();
+      });
+    };
+
+    const signalReady = await checkSignalReady();
+    if (!signalReady) {
+      setRecordingWaiting(false);
+      alert("Aucun flux vidéo détecté. Vérifiez que votre caméra ou partage d'écran fonctionne.");
+      return null;
+    }
+
+    // Étape 2 : Lancer l'egress
     setRecordingLoading(true);
     try {
       const res = await fetch("/api/start_recording", {
@@ -139,13 +194,54 @@ function HostRoom({ returnUrl = "/" }: { returnUrl?: string }) {
       if (!res.ok) {
         const err = await res.text();
         alert(`Erreur démarrage enregistrement : ${err}`);
+        setRecordingWaiting(false);
         return null;
       }
       const { egress_id } = await res.json();
       setEgressId(egress_id);
+
+      // Étape 3 : Attendre que le webhook egress_started confirme PROCESSING en base
+      // Poll /api/recording-status toutes les 500ms, max 10 secondes
+      // Si timeout → on démarre quand même (l'egress est probablement actif)
+      const waitForEgressReady = (): Promise<boolean> => {
+        return new Promise((resolve) => {
+          let attempts = 0;
+          const maxAttempts = 20; // 20 × 500ms = 10 secondes max
+          const poll = async () => {
+            attempts++;
+            try {
+              const statusRes = await fetch(
+                `/api/recording-status?egressId=${encodeURIComponent(egress_id)}`
+              );
+              if (statusRes.ok) {
+                const data = await statusRes.json();
+                if (data.status === "PROCESSING") {
+                  resolve(true);
+                  return;
+                }
+              }
+            } catch {}
+            if (attempts >= maxAttempts) {
+              // Timeout — on démarre le timer quand même
+              resolve(true);
+            } else {
+              setTimeout(poll, 500);
+            }
+          };
+          poll();
+        });
+      };
+
+      await waitForEgressReady();
+
+      // Étape 4 : Timer démarre ici — synchronisé avec le début réel de la capture
+      setRecordingWaiting(false);
       setRecording(true);
+      setRecordingStartTime(Date.now());
       return egress_id;
-    } finally { setRecordingLoading(false); }
+    } finally {
+      setRecordingLoading(false);
+    }
   };
 
   const stopRecording = async () => {
@@ -159,6 +255,7 @@ function HostRoom({ returnUrl = "/" }: { returnUrl?: string }) {
       });
       setEgressId(null);
       setRecording(false);
+      setRecordingStartTime(null);
     } finally { setRecordingLoading(false); }
   };
 
@@ -201,7 +298,6 @@ function HostRoom({ returnUrl = "/" }: { returnUrl?: string }) {
   const stageCamTracks = camTracks.filter(t => stageParts.some(p => p.identity === t.participant.identity));
   const stageAudioTracks = tracks.filter(t => t.source === Track.Source.Microphone && t.participant.identity !== localParticipant.identity);
 
-  // Détermine le contenu principal
   const mainContent = showWhiteboard ? "whiteboard" : screenTrack ? "screen" : ingressCamTrack ? "ingress" : localCamTrack ? "cam" : "avatar";
 
   return (
@@ -243,7 +339,7 @@ function HostRoom({ returnUrl = "/" }: { returnUrl?: string }) {
               : recordingLoading
                 ? <span className="h-rec-spinner" />
                 : recording
-                  ? <><span className="h-rec-dot" />Arrêter</>
+                  ? <><span className="h-rec-dot" />{recordingElapsed} ■</>
                   : <>⏺ Enreg.</>
             }
           </button>
@@ -260,14 +356,17 @@ function HostRoom({ returnUrl = "/" }: { returnUrl?: string }) {
       {recording && (
         <div className="h-rec-banner">
           <span className="h-rec-indicator" />
-          Enregistrement en cours...
+          Enregistrement en cours
+          <span style={{ fontFamily: "monospace", fontWeight: 700, fontSize: "0.82rem", marginLeft: 4, color: "#f87171" }}>
+            {recordingElapsed}
+          </span>
         </div>
       )}
 
       {recordingWaiting && (
         <div className="h-rec-banner" style={{background:"rgba(59,130,246,.08)",borderBottomColor:"rgba(59,130,246,.2)",color:"#60a5fa"}}>
           <span className="h-rec-spinner" style={{marginRight:4}} />
-          Préparation de l&apos;enregistrement — vérification des flux vidéo…
+          Vérification du signal vidéo et synchronisation de l&apos;enregistrement…
         </div>
       )}
 
@@ -275,46 +374,38 @@ function HostRoom({ returnUrl = "/" }: { returnUrl?: string }) {
         <div className="h-stage">
           <div className="h-main-video">
 
-            {/* ── TABLEAU BLANC dans la zone principale ── */}
             {mainContent === "whiteboard" && (
               <div style={{ position: "absolute", inset: 0, background: "white" }}>
                 <Whiteboard readOnly={false} />
               </div>
             )}
 
-            {/* ── PARTAGE D'ÉCRAN ── */}
             {mainContent === "screen" && (
               <VideoTrack trackRef={screenTrack!} className="h-video-el" />
             )}
 
-            {/* ── INGRESS OBS ── */}
             {mainContent === "ingress" && (
               <VideoTrack trackRef={ingressCamTrack!} className="h-video-el" />
             )}
 
-            {/* ── CAMÉRA LOCALE ── */}
             {mainContent === "cam" && (
               <VideoTrack trackRef={localCamTrack!} className="h-video-el" />
             )}
 
-            {/* ── AVATAR ── */}
             {mainContent === "avatar" && (
               <div className="h-avatar-big">{localParticipant.identity.charAt(0).toUpperCase()}</div>
             )}
 
-            {/* Badge "Vous" — masqué quand tableau actif */}
             {mainContent !== "whiteboard" && (
               <div className="h-you-badge">Vous</div>
             )}
 
-            {/* Badge "Tableau blanc" quand actif */}
             {mainContent === "whiteboard" && (
               <div className="h-you-badge" style={{ background: "rgba(0,101,177,.85)" }}>
                 🖊 Tableau blanc
               </div>
             )}
 
-            {/* PiP caméra locale quand écran ou tableau actif */}
             {(mainContent === "screen" || mainContent === "whiteboard") && (
               <div className="h-pip-container">
                 {localCamTrack && (
@@ -337,7 +428,6 @@ function HostRoom({ returnUrl = "/" }: { returnUrl?: string }) {
             )}
           </div>
 
-          {/* Strip participants sur scène (seulement quand pas d'écran ni tableau) */}
           {mainContent !== "screen" && mainContent !== "whiteboard" && stageParts.length > 0 && (
             <div className="h-strip">
               {stageParts.map(p => {
