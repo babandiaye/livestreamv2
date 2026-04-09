@@ -55,6 +55,7 @@ function HostRoom({ returnUrl = "/" }: { returnUrl?: string }) {
 
   const [streamingEgressId, setStreamingEgressId] = useState<string | null>(null);
   const [streaming, setStreaming] = useState(false);
+  const [streamingFailed, setStreamingFailed] = useState(false);
   const [showStreamingDialog, setShowStreamingDialog] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [floatingEmojis, setFloatingEmojis] = useState<{id:number;emoji:string;x:number}[]>([]);
@@ -148,14 +149,13 @@ function HostRoom({ returnUrl = "/" }: { returnUrl?: string }) {
       return null;
     }
 
-    // Étape 1 : Vérifier que le flux vidéo est réellement actif (pas juste "enabled")
-    // Poll toutes les 500ms, max 15 secondes
+    // Étape 1 : Vérifier que le flux vidéo est réellement actif
     setRecordingWaiting(true);
 
     const checkSignalReady = (): Promise<boolean> => {
       return new Promise((resolve) => {
         let attempts = 0;
-        const maxAttempts = 30; // 30 × 500ms = 15 secondes max
+        const maxAttempts = 30;
         const check = () => {
           attempts++;
           const hasActiveTrack = tracks.some(t => {
@@ -200,18 +200,17 @@ function HostRoom({ returnUrl = "/" }: { returnUrl?: string }) {
       const { egress_id } = await res.json();
       setEgressId(egress_id);
 
-      // Étape 3 : Attendre que le webhook egress_started confirme PROCESSING en base
-      // Poll /api/recording-status toutes les 500ms, max 10 secondes
-      // Si timeout → on démarre quand même (l'egress est probablement actif)
+      // Étape 3 : Attendre que le webhook egress_started confirme PROCESSING
       const waitForEgressReady = (): Promise<boolean> => {
         return new Promise((resolve) => {
           let attempts = 0;
-          const maxAttempts = 20; // 20 × 500ms = 10 secondes max
+          const maxAttempts = 20;
           const poll = async () => {
             attempts++;
             try {
               const statusRes = await fetch(
-                `/api/recording-status?egressId=${encodeURIComponent(egress_id)}`
+                `/api/recording-status?egressId=${encodeURIComponent(egress_id)}`,
+                { headers: { Authorization: `Bearer ${authToken}` } }
               );
               if (statusRes.ok) {
                 const data = await statusRes.json();
@@ -222,7 +221,6 @@ function HostRoom({ returnUrl = "/" }: { returnUrl?: string }) {
               }
             } catch {}
             if (attempts >= maxAttempts) {
-              // Timeout — on démarre le timer quand même
               resolve(true);
             } else {
               setTimeout(poll, 500);
@@ -234,7 +232,7 @@ function HostRoom({ returnUrl = "/" }: { returnUrl?: string }) {
 
       await waitForEgressReady();
 
-      // Étape 4 : Timer démarre ici — synchronisé avec le début réel de la capture
+      // Étape 4 : Timer démarre — synchronisé avec le début réel
       setRecordingWaiting(false);
       setRecording(true);
       setRecordingStartTime(Date.now());
@@ -259,14 +257,43 @@ function HostRoom({ returnUrl = "/" }: { returnUrl?: string }) {
     } finally { setRecordingLoading(false); }
   };
 
+  // Arrêter le streaming RTMP
+  const stopStreaming = async () => {
+    if (!streamingEgressId) return;
+    try {
+      await fetch("/api/stop-streaming", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${authToken}` },
+        body: JSON.stringify({ egress_id: streamingEgressId }),
+      });
+    } catch (e) {
+      console.warn("[stopStreaming] error:", e);
+    }
+    setStreamingEgressId(null);
+    setStreaming(false);
+    setStreamingFailed(false);
+  };
+
   const stopStream = async () => {
     if (!confirm("Arrêter le stream pour tout le monde ?")) return;
+    // Arrêter l'enregistrement si actif
     if (recording) await stopRecording();
+    // Arrêter le streaming RTMP si actif
+    if (streaming) await stopStreaming();
+    // Fermer la room
     await fetch("/api/stop_stream", {
       method: "POST",
       headers: { Authorization: `Bearer ${authToken}` },
     });
     window.location.href = returnUrl;
+  };
+
+  // Callback quand le streaming échoue (détecté par le polling dans StreamingDialog)
+  const handleStreamingFailed = (error: string) => {
+    console.error("[streaming] failed:", error);
+    setStreamingFailed(true);
+    // On garde streaming=true pour que l'utilisateur puisse voir le dialog d'erreur
+    // et arrêter proprement
   };
 
   const launchEmoji = (emoji: string) => {
@@ -344,10 +371,15 @@ function HostRoom({ returnUrl = "/" }: { returnUrl?: string }) {
             }
           </button>
           <button
-            className={`h-btn-stream${streaming ? " active" : ""}`}
+            className={`h-btn-stream${streaming ? (streamingFailed ? " failed" : " active") : ""}`}
             onClick={() => setShowStreamingDialog(true)}
           >
-            {streaming ? <><span className="h-rec-dot" />En direct</> : <>📡 Diffuser</>}
+            {streaming
+              ? streamingFailed
+                ? <><span className="h-rec-dot" style={{ background: "#ef4444", animation: "none" }} />Échoué</>
+                : <><span className="h-rec-dot" style={{ background: "#22c55e" }} />En direct</>
+              : <>📡 Diffuser</>
+            }
           </button>
           <div className="h-host-badge">Hôte</div>
         </div>
@@ -367,6 +399,18 @@ function HostRoom({ returnUrl = "/" }: { returnUrl?: string }) {
         <div className="h-rec-banner" style={{background:"rgba(59,130,246,.08)",borderBottomColor:"rgba(59,130,246,.2)",color:"#60a5fa"}}>
           <span className="h-rec-spinner" style={{marginRight:4}} />
           Vérification du signal vidéo et synchronisation de l&apos;enregistrement…
+        </div>
+      )}
+
+      {streaming && streamingFailed && (
+        <div className="h-rec-banner" style={{background:"rgba(239,68,68,.12)",borderBottomColor:"rgba(239,68,68,.3)",color:"#ef4444"}}>
+          ⚠️ Le streaming RTMP a échoué — vérifiez vos paramètres de diffusion
+          <button
+            onClick={() => setShowStreamingDialog(true)}
+            style={{ marginLeft: "auto", padding: "3px 10px", background: "rgba(239,68,68,.15)", border: "1px solid rgba(239,68,68,.4)", borderRadius: 6, color: "#ef4444", fontSize: "0.72rem", cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}
+          >
+            Voir détails
+          </button>
         </div>
       )}
 
@@ -618,8 +662,9 @@ function HostRoom({ returnUrl = "/" }: { returnUrl?: string }) {
       {showStreamingDialog && (
         <StreamingDialog
           authToken={authToken}
-          onStreamingStart={(id) => { setStreamingEgressId(id); setStreaming(true); }}
-          onStreamingStop={() => { setStreamingEgressId(null); setStreaming(false); }}
+          onStreamingStart={(id) => { setStreamingEgressId(id); setStreaming(true); setStreamingFailed(false); }}
+          onStreamingStop={() => { setStreamingEgressId(null); setStreaming(false); setStreamingFailed(false); }}
+          onStreamingFailed={handleStreamingFailed}
           onRecordingStart={startRecording}
           isStreaming={streaming}
           streamingEgressId={streamingEgressId}
@@ -649,6 +694,7 @@ function HostRoom({ returnUrl = "/" }: { returnUrl?: string }) {
         .h-btn-stream{display:flex;align-items:center;gap:5px;padding:5px 12px;background:#1e2d3d;color:#e2e8f0;border:1px solid #2d3f52;border-radius:7px;font-size:0.78rem;font-weight:500;cursor:pointer;font-family:inherit;transition:background .2s;}
         .h-btn-stream:hover{background:#243447;}
         .h-btn-stream.active{background:rgba(34,197,94,.12);border-color:rgba(34,197,94,.3);color:#22c55e;}
+        .h-btn-stream.failed{background:rgba(239,68,68,.12);border-color:rgba(239,68,68,.3);color:#ef4444;}
         .h-host-badge{background:#3b82f6;color:white;padding:4px 12px;border-radius:7px;font-size:0.78rem;font-weight:600;}
         .h-rec-dot{width:7px;height:7px;border-radius:50%;background:#ef4444;animation:pulse 1s ease-in-out infinite;flex-shrink:0;}
         .h-rec-spinner{width:13px;height:13px;border:2px solid rgba(255,255,255,.3);border-top-color:white;border-radius:50%;animation:spin .7s linear infinite;}

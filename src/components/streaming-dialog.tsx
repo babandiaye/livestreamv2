@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 
 interface Props {
   authToken: string;
   onStreamingStart: (egressId: string) => void;
   onStreamingStop: () => void;
+  onStreamingFailed?: (error: string) => void;
   onRecordingStart?: () => Promise<string | null>;
   isStreaming: boolean;
   streamingEgressId: string | null;
@@ -60,10 +61,26 @@ const DEFAULT_DESTINATIONS: Destination[] = [
   },
 ];
 
+function validateRtmpUrl(url: string): string | null {
+  if (!url.trim()) return "L'URL du serveur est requise";
+  if (!url.startsWith("rtmp://") && !url.startsWith("rtmps://")) {
+    return "L'URL doit commencer par rtmp:// ou rtmps://";
+  }
+  if (url.trim().length < 12) return "URL trop courte";
+  return null;
+}
+
+function validateStreamKey(key: string): string | null {
+  if (!key.trim()) return "La clé de stream est requise";
+  if (key.trim().length < 4) return "Clé de stream trop courte";
+  return null;
+}
+
 export default function StreamingDialog({
   authToken,
   onStreamingStart,
   onStreamingStop,
+  onStreamingFailed,
   onRecordingStart,
   isStreaming,
   streamingEgressId,
@@ -72,20 +89,114 @@ export default function StreamingDialog({
   const [destinations, setDestinations] = useState<Destination[]>(DEFAULT_DESTINATIONS);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
+  const [streamStatus, setStreamStatus] = useState<"live" | "checking" | "failed" | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [keyVisible, setKeyVisible] = useState<Record<string, boolean>>({});
+
+  // Polling du statut de l'egress streaming pour détecter les échecs
+  useEffect(() => {
+    if (!isStreaming || !streamingEgressId) {
+      if (pollRef.current) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
+      setStreamStatus(null);
+      return;
+    }
+
+    setStreamStatus("checking");
+    let failCount = 0;
+
+    const checkStatus = async () => {
+      try {
+        const res = await fetch(
+          `/api/streaming-status?egressId=${encodeURIComponent(streamingEgressId)}`,
+          { headers: { Authorization: `Bearer ${authToken}` } }
+        );
+        if (!res.ok) return;
+        const data = await res.json();
+
+        if (data.active) {
+          setStreamStatus("live");
+          failCount = 0;
+        } else if (data.failed) {
+          setStreamStatus("failed");
+          setError(data.error || "Le streaming a échoué — vérifiez votre URL et clé RTMP");
+          onStreamingFailed?.(data.error || "Streaming échoué");
+          if (pollRef.current) {
+            clearInterval(pollRef.current);
+            pollRef.current = null;
+          }
+        } else if (data.status === "NOT_FOUND") {
+          failCount++;
+          if (failCount >= 3) {
+            setStreamStatus("failed");
+            setError("Le streaming semble avoir échoué — l'egress n'est plus actif");
+            onStreamingFailed?.("Egress introuvable");
+            if (pollRef.current) {
+              clearInterval(pollRef.current);
+              pollRef.current = null;
+            }
+          }
+        }
+      } catch {
+        // Erreur réseau — on continue de poller
+      }
+    };
+
+    // Vérifier immédiatement puis toutes les 8 secondes
+    checkStatus();
+    pollRef.current = setInterval(checkStatus, 8000);
+
+    return () => {
+      if (pollRef.current) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
+    };
+  }, [isStreaming, streamingEgressId, authToken, onStreamingFailed]);
 
   const update = (id: string, field: keyof Destination, value: string | boolean) => {
     setDestinations(prev =>
       prev.map(d => d.id === id ? { ...d, [field]: value } : d)
     );
+    if (field === "url" || field === "key") {
+      setValidationErrors(prev => {
+        const next = { ...prev };
+        delete next[`${id}-${field}`];
+        return next;
+      });
+    }
   };
 
   const activeDestinations = destinations.filter(d => d.enabled);
+
+  const validate = (): boolean => {
+    const errors: Record<string, string> = {};
+
+    for (const dest of activeDestinations) {
+      const url = dest.urlFixed || dest.url;
+      const urlErr = validateRtmpUrl(url);
+      if (urlErr) errors[`${dest.id}-url`] = urlErr;
+
+      const keyErr = validateStreamKey(dest.key);
+      if (keyErr) errors[`${dest.id}-key`] = keyErr;
+    }
+
+    setValidationErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
   const canStart = activeDestinations.length > 0 &&
     activeDestinations.every(d => d.key.trim() && (d.urlFixed || d.url.trim()));
 
   const handleStart = async () => {
+    if (!validate()) return;
+
     setLoading(true);
     setError("");
+    setStreamStatus(null);
     try {
       const payload = activeDestinations.map(d => ({
         url: d.urlFixed || d.url.trim(),
@@ -101,19 +212,21 @@ export default function StreamingDialog({
         body: JSON.stringify({ destinations: payload }),
       });
 
-      if (!res.ok) { setError(await res.text()); return; }
+      if (!res.ok) {
+        const errText = await res.text();
+        setError(errText || "Erreur lors du démarrage du streaming");
+        return;
+      }
       const { egress_id } = await res.json();
       onStreamingStart(egress_id);
       if (onRecordingStart) {
         console.log("[streaming-dialog] Démarrage enregistrement...");
         const recId = await onRecordingStart();
         console.log("[streaming-dialog] Enregistrement démarré:", recId);
-      } else {
-        console.log("[streaming-dialog] onRecordingStart non défini");
       }
       onClose();
     } catch {
-      setError("Erreur réseau");
+      setError("Erreur réseau — vérifiez votre connexion");
     } finally {
       setLoading(false);
     }
@@ -170,17 +283,46 @@ export default function StreamingDialog({
         {/* Body */}
         <div className="sd-body">
           {isStreaming ? (
-            <div className="sd-live-info">
-              <div className="sd-live-badge">
-                <span className="sd-live-dot" />
-                STREAMING EN DIRECT
-              </div>
-              <p className="sd-live-desc">
-                Votre session est actuellement diffusée sur {activeDestinations.length > 0
-                  ? activeDestinations.map(d => d.label).join(", ")
-                  : "les plateformes configurées"}.
+            <div className={`sd-live-info ${streamStatus === "failed" ? "sd-live-info--failed" : ""}`}>
+              {streamStatus === "failed" ? (
+                <>
+                  <div className="sd-live-badge sd-live-badge--failed">
+                    <span className="sd-live-dot sd-live-dot--failed" />
+                    STREAMING ÉCHOUÉ
+                  </div>
+                  <p className="sd-live-desc" style={{ color: "#fca5a5" }}>
+                    La connexion RTMP a échoué. Vérifiez que votre URL et clé de stream sont correctes,
+                    et que le serveur de destination (YouTube, Sunu-Tube) est accessible.
+                  </p>
+                </>
+              ) : streamStatus === "checking" ? (
+                <>
+                  <div className="sd-live-badge sd-live-badge--checking">
+                    <span className="sd-checking-spinner" />
+                    VÉRIFICATION DU STREAM…
+                  </div>
+                  <p className="sd-live-desc">
+                    Connexion en cours vers les plateformes de diffusion. Cette vérification peut prendre quelques secondes.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <div className="sd-live-badge">
+                    <span className="sd-live-dot" />
+                    STREAMING EN DIRECT
+                  </div>
+                  <p className="sd-live-desc">
+                    Votre session est actuellement diffusée sur {activeDestinations.length > 0
+                      ? activeDestinations.map(d => d.label).join(", ")
+                      : "les plateformes configurées"}.
+                  </p>
+                </>
+              )}
+              <p className="sd-live-warn">
+                {streamStatus === "failed"
+                  ? "Vous pouvez arrêter le streaming et réessayer avec les bons paramètres."
+                  : "Arrêter le streaming mettra fin à la diffusion sur toutes les plateformes."}
               </p>
-              <p className="sd-live-warn">Arrêter le streaming mettra fin à la diffusion sur toutes les plateformes.</p>
             </div>
           ) : (
             destinations.map(dest => (
@@ -203,12 +345,15 @@ export default function StreamingDialog({
                       <div className="sd-field">
                         <label className="sd-label">URL du serveur RTMP</label>
                         <input
-                          className="sd-input"
+                          className={`sd-input ${validationErrors[`${dest.id}-url`] ? "sd-input--error" : ""}`}
                           type="text"
                           placeholder="rtmp://votre-serveur/live"
                           value={dest.url}
                           onChange={e => update(dest.id, "url", e.target.value)}
                         />
+                        {validationErrors[`${dest.id}-url`] && (
+                          <p className="sd-field-error">{validationErrors[`${dest.id}-url`]}</p>
+                        )}
                       </div>
                     )}
                     {!dest.urlEditable && (
@@ -219,13 +364,30 @@ export default function StreamingDialog({
                     )}
                     <div className="sd-field">
                       <label className="sd-label">Clé de stream</label>
-                      <input
-                        className="sd-input"
-                        type="password"
-                        placeholder="xxxx-xxxx-xxxx-xxxx"
-                        value={dest.key}
-                        onChange={e => update(dest.id, "key", e.target.value)}
-                      />
+                      <div className="sd-input-wrap">
+                        <input
+                          className={`sd-input sd-input--key ${validationErrors[`${dest.id}-key`] ? "sd-input--error" : ""}`}
+                          type={keyVisible[dest.id] ? "text" : "password"}
+                          placeholder="xxxx-xxxx-xxxx-xxxx"
+                          value={dest.key}
+                          onChange={e => update(dest.id, "key", e.target.value)}
+                        />
+                        <button
+                          type="button"
+                          className="sd-eye-btn"
+                          onClick={() => setKeyVisible(prev => ({ ...prev, [dest.id]: !prev[dest.id] }))}
+                          title={keyVisible[dest.id] ? "Masquer la clé" : "Afficher la clé"}
+                        >
+                          {keyVisible[dest.id] ? (
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                          ) : (
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                          )}
+                        </button>
+                      </div>
+                      {validationErrors[`${dest.id}-key`] && (
+                        <p className="sd-field-error">{validationErrors[`${dest.id}-key`]}</p>
+                      )}
                       <p className="sd-hint">{dest.keyHint}</p>
                     </div>
                   </div>
@@ -238,7 +400,7 @@ export default function StreamingDialog({
             <p className="sd-warn">Activez et configurez au moins une destination pour démarrer le streaming</p>
           )}
 
-          {error && <p className="sd-error">{error}</p>}
+          {error && <p className="sd-error">⚠️ {error}</p>}
         </div>
 
         {/* Footer */}
@@ -284,15 +446,26 @@ export default function StreamingDialog({
         .sd-dest-fields{padding:0 16px 16px;display:flex;flex-direction:column;gap:12px;border-top:1px solid #3c4043;}
         .sd-field{display:flex;flex-direction:column;gap:5px;padding-top:12px;}
         .sd-label{font-size:0.82rem;font-weight:500;color:#9aa0a6;}
-        .sd-input{padding:10px 13px;border:1.5px solid #3c4043;border-radius:8px;background:#2a2b2e;color:#e8eaed;font-size:0.88rem;outline:none;transition:border-color .2s;font-family:inherit;}
+        .sd-input{padding:10px 13px;border:1.5px solid #3c4043;border-radius:8px;background:#2a2b2e;color:#e8eaed;font-size:0.88rem;outline:none;transition:border-color .2s;font-family:inherit;width:100%;}
         .sd-input:focus{border-color:#1a73e8;}
         .sd-input--ro{color:#9aa0a6;font-family:monospace;font-size:0.8rem;background:#1a1b1e;}
+        .sd-input--error{border-color:#ef4444 !important;}
+        .sd-input--key{padding-right:42px;}
+        .sd-input-wrap{position:relative;display:flex;align-items:center;}
+        .sd-eye-btn{position:absolute;right:10px;background:none;border:none;cursor:pointer;color:#5f6368;display:flex;align-items:center;justify-content:center;padding:4px;border-radius:4px;transition:color .15s;}
+        .sd-eye-btn:hover{color:#e8eaed;}
+        .sd-field-error{font-size:0.75rem;color:#ef4444;margin-top:2px;}
         .sd-hint{font-size:0.75rem;color:#5f6368;}
         .sd-warn{font-size:0.82rem;color:#9aa0a6;text-align:center;padding:8px;background:#2a2b2e;border-radius:8px;}
-        .sd-error{color:#ea4335;font-size:0.82rem;background:#3c1212;padding:10px 14px;border-radius:6px;}
+        .sd-error{color:#ef4444;font-size:0.82rem;background:#3c1212;padding:10px 14px;border-radius:6px;}
         .sd-live-info{display:flex;flex-direction:column;gap:12px;padding:16px;background:#1a2a1a;border:1.5px solid #34a853;border-radius:10px;}
+        .sd-live-info--failed{background:#2a1a1a;border-color:#ef4444;}
         .sd-live-badge{display:flex;align-items:center;gap:8px;font-size:0.78rem;font-weight:700;color:#34a853;}
+        .sd-live-badge--failed{color:#ef4444;}
+        .sd-live-badge--checking{color:#f59e0b;}
         .sd-live-dot{width:8px;height:8px;border-radius:50%;background:#34a853;animation:pulse 1.2s ease-in-out infinite;flex-shrink:0;}
+        .sd-live-dot--failed{background:#ef4444;animation:none;}
+        .sd-checking-spinner{width:14px;height:14px;border:2px solid rgba(245,158,11,.3);border-top-color:#f59e0b;border-radius:50%;animation:spin .7s linear infinite;flex-shrink:0;}
         @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
         .sd-live-desc{font-size:0.88rem;color:#e8eaed;line-height:1.5;}
         .sd-live-warn{font-size:0.78rem;color:#9aa0a6;}
