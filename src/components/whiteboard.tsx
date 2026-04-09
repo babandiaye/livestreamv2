@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useCallback } from "react"
 import { useRoomContext, useLocalParticipant } from "@livekit/components-react"
 
 const WB_TOPIC = "wb"
+const MIN_DISTANCE = 0.003
 
 type WBEvent = {
   v: 1
@@ -47,7 +48,7 @@ function replayEvent(ctx: CanvasRenderingContext2D, ev: WBEvent) {
     ctx.lineCap = "round"
     ctx.lineJoin = "round"
     ctx.beginPath()
-    ctx.moveTo(ev.x0! * ctx.canvas.width, ev.y0! * ctx.canvas.height)
+    ctx.moveTo(ev.x0 * ctx.canvas.width, ev.y0! * ctx.canvas.height)
     ctx.lineTo(ev.x1! * ctx.canvas.width, ev.y1! * ctx.canvas.height)
     ctx.stroke()
     ctx.restore()
@@ -62,9 +63,12 @@ export default function Whiteboard({
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const isDrawing = useRef(false)
+  const hasMoved = useRef(false)
   const lastPos = useRef({ x: 0, y: 0 })
+  const startPos = useRef({ x: 0, y: 0 })
   const eventStore = useRef<WBEvent[]>([])
-  const throttleRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const batchRef = useRef<WBEvent[]>([])
+  const batchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const [tool, setTool]   = useState<"pen"|"eraser">("pen")
   const [color, setColor] = useState("#1a1a2e")
@@ -84,13 +88,15 @@ export default function Whiteboard({
       const canvas = canvasRef.current
       if (!container || !canvas) return
       const { width, height } = container.getBoundingClientRect()
-      if (canvas.width === width && canvas.height === height) return
+      const w = Math.round(width)
+      const h = Math.round(height)
+      if (canvas.width === w && canvas.height === h) return
       const tmp = document.createElement("canvas")
       tmp.width = canvas.width; tmp.height = canvas.height
       tmp.getContext("2d")!.drawImage(canvas, 0, 0)
-      canvas.width = Math.round(width)
-      canvas.height = Math.round(height)
-      canvas.getContext("2d")!.drawImage(tmp, 0, 0, canvas.width, canvas.height)
+      canvas.width = w
+      canvas.height = h
+      canvas.getContext("2d")!.drawImage(tmp, 0, 0, w, h)
     }
     resize()
     const ro = new ResizeObserver(resize)
@@ -98,21 +104,29 @@ export default function Whiteboard({
     return () => ro.disconnect()
   }, [])
 
+  // Envoyer l'historique complet (appelé quand un participant rejoint ou demande)
   const sendInit = useCallback(() => {
     if (readOnly) return
     const init: WBInit = { v: 1, type: "init", events: eventStore.current }
     localParticipant.publishData(
       new TextEncoder().encode(JSON.stringify(init)),
-      { reliable: true }
+      { reliable: true, topic: WB_TOPIC }
     )
   }, [readOnly, localParticipant])
 
-  // Recevoir données LiveKit
+  // Recevoir données LiveKit — filtré par topic "wb" + ignorer self
   useEffect(() => {
-    const handleData = (payload: Uint8Array, participant: any) => {
+    const handleData = (payload: Uint8Array, participant: any, _kind: any, topic?: string) => {
+      // Filtrer par topic : ignorer tout ce qui n'est pas whiteboard
+      if (topic !== WB_TOPIC && topic !== undefined) return
+
+      // Ignorer ses propres messages (l'hôte dessine déjà localement)
+      if (participant?.identity === localParticipant.identity) return
+
       try {
-        // Signal de demande d'historique (vient de l'egress)
         const raw = new TextDecoder().decode(payload)
+
+        // Signal de demande d'historique (vient de l'egress ou d'un nouveau participant)
         if (raw === "__wb_request_init__") {
           sendInit()
           return
@@ -126,7 +140,14 @@ export default function Whiteboard({
 
         if (msg.type === "init") {
           ctx.clearRect(0, 0, canvas.width, canvas.height)
+          eventStore.current = [...msg.events]
           for (const ev of msg.events) replayEvent(ctx, ev)
+          return
+        }
+
+        if (msg.type === "clear") {
+          ctx.clearRect(0, 0, canvas.width, canvas.height)
+          eventStore.current = []
           return
         }
 
@@ -148,44 +169,69 @@ export default function Whiteboard({
     }
   }, [room, readOnly, localParticipant, sendInit])
 
+  // Broadcast avec batch : accumule les events pendant 16ms puis envoie tout avec topic
   const broadcast = useCallback((ev: WBEvent) => {
     eventStore.current.push(ev)
-    if (throttleRef.current) clearTimeout(throttleRef.current)
-    throttleRef.current = setTimeout(() => {
-      localParticipant.publishData(
-        new TextEncoder().encode(JSON.stringify(ev)),
-        { reliable: true }
-      )
-    }, 16)
+    batchRef.current.push(ev)
+    if (!batchTimer.current) {
+      batchTimer.current = setTimeout(() => {
+        const batch = batchRef.current
+        batchRef.current = []
+        batchTimer.current = null
+        for (const e of batch) {
+          localParticipant.publishData(
+            new TextEncoder().encode(JSON.stringify(e)),
+            { reliable: true, topic: WB_TOPIC }
+          )
+        }
+      }, 16)
+    }
   }, [localParticipant])
 
+  // getPos corrigé : utilise rect.width/rect.height (CSS) pour la normalisation
   const getPos = (e: React.PointerEvent) => {
     const canvas = canvasRef.current!
     const rect = canvas.getBoundingClientRect()
     return {
-      x: (e.clientX - rect.left) / canvas.width,
-      y: (e.clientY - rect.top)  / canvas.height,
+      x: (e.clientX - rect.left) / rect.width,
+      y: (e.clientY - rect.top)  / rect.height,
     }
   }
 
   const onPointerDown = (e: React.PointerEvent) => {
     if (readOnly) return
     if (textMode) {
-      const pos = getPos(e)
-      setTextPos({ x: pos.x * canvasRef.current!.width, y: pos.y * canvasRef.current!.height })
+      const canvas = canvasRef.current!
+      const rect = canvas.getBoundingClientRect()
+      const px = e.clientX - rect.left
+      const py = e.clientY - rect.top
+      setTextPos({ x: px, y: py })
       setTextVal("")
       setTimeout(() => textInputRef.current?.focus(), 30)
       return
     }
     isDrawing.current = true
-    lastPos.current = getPos(e)
+    hasMoved.current = false
+    const pos = getPos(e)
+    lastPos.current = pos
+    startPos.current = pos
   }
 
   const onPointerMove = (e: React.PointerEvent) => {
     if (!isDrawing.current || readOnly || textMode) return
+    const pos = getPos(e)
+
+    // Dead zone : ne pas dessiner tant que le mouvement est inférieur au seuil
+    if (!hasMoved.current) {
+      const dx = pos.x - startPos.current.x
+      const dy = pos.y - startPos.current.y
+      const dist = Math.sqrt(dx * dx + dy * dy)
+      if (dist < MIN_DISTANCE) return
+      hasMoved.current = true
+    }
+
     const canvas = canvasRef.current!
     const ctx = canvas.getContext("2d")!
-    const pos = getPos(e)
     const ev: WBEvent = {
       v: 1, type: "draw", tool, color, size,
       x0: lastPos.current.x, y0: lastPos.current.y,
@@ -196,18 +242,22 @@ export default function Whiteboard({
     lastPos.current = pos
   }
 
-  const onPointerUp = () => { isDrawing.current = false }
+  const onPointerUp = () => {
+    isDrawing.current = false
+    hasMoved.current = false
+  }
 
   const confirmText = () => {
     if (!textVal.trim() || !textPos) { setTextPos(null); return }
     const canvas = canvasRef.current!
-    const ctx = canvas.getContext("2d")!
+    const rect = canvas.getBoundingClientRect()
     const fontSize = size * 6 + 10
     const ev: WBEvent = {
       v: 1, type: "text", color, fontSize, text: textVal,
-      tx: textPos.x / canvas.width,
-      ty: textPos.y / canvas.height,
+      tx: textPos.x / rect.width,
+      ty: textPos.y / rect.height,
     }
+    const ctx = canvas.getContext("2d")!
     replayEvent(ctx, ev)
     broadcast(ev)
     setTextPos(null); setTextVal("")
@@ -218,7 +268,10 @@ export default function Whiteboard({
     canvas.getContext("2d")!.clearRect(0, 0, canvas.width, canvas.height)
     const ev: WBEvent = { v: 1, type: "clear" }
     eventStore.current = []
-    broadcast(ev)
+    localParticipant.publishData(
+      new TextEncoder().encode(JSON.stringify(ev)),
+      { reliable: true, topic: WB_TOPIC }
+    )
   }
 
   const toolbarH = readOnly ? 0 : 56

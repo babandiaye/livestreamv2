@@ -12,6 +12,8 @@ type WBEvent = { v: 1; type: "draw"|"clear"|"text"; tool?: string; color?: strin
 type WBInit  = { v: 1; type: "init"; events: WBEvent[] }
 type WBMsg   = WBEvent | WBInit
 
+const WB_TOPIC = "wb"
+
 function replayEvent(ctx: CanvasRenderingContext2D, ev: WBEvent) {
   if (ev.type === "clear") { ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height); return }
   if (ev.type === "text" && ev.text && ev.tx !== undefined && ev.ty !== undefined) {
@@ -84,29 +86,32 @@ function EgressRoom() {
   const [showWhiteboard, setShowWhiteboard] = useState(false)
   const room = useRoomContext()
 
-  // Demander l'historique du tableau au montage et envoyer un rappel après 2s
+  // Demander l'historique du tableau au montage
   useEffect(() => {
     const requestInit = () => {
       try {
         room.localParticipant.publishData(
           new TextEncoder().encode("__wb_request_init__"),
-          { reliable: true }
+          { reliable: true, topic: WB_TOPIC }
         )
       } catch {}
     }
-    // Première demande dès que connecté
     const t1 = setTimeout(requestInit, 1500)
-    // Deuxième demande au cas où le premier arrive trop tôt
     const t2 = setTimeout(requestInit, 4000)
     return () => { clearTimeout(t1); clearTimeout(t2) }
   }, [room])
 
-  // Recevoir events tableau blanc via data channels
+  // Recevoir events tableau blanc via data channels — filtré par topic
   useEffect(() => {
-    const handleData = (payload: Uint8Array) => {
+    const handleData = (payload: Uint8Array, participant: any, _kind: any, topic?: string) => {
+      // Ne traiter que les messages whiteboard
+      if (topic !== WB_TOPIC && topic !== undefined) return
+      // Ignorer ses propres messages
+      if (participant?.identity === room.localParticipant.identity) return
+
       try {
         const raw = new TextDecoder().decode(payload)
-        if (raw === "__wb_request_init__") return // ignorer nos propres demandes
+        if (raw === "__wb_request_init__") return
         const msg: WBMsg = JSON.parse(raw)
         if (!msg || msg.v !== 1) return
         const canvas = canvasRef.current

@@ -168,6 +168,14 @@ function ViewerRoom({ returnUrl = "/" }: { returnUrl?: string }) {
     }
   }, [lastMsgTs]);
 
+  // ── Auto-activation du tableau blanc quand l'hôte l'active/désactive ──
+  useEffect(() => {
+    const last = chatMessages[chatMessages.length - 1]
+    if (!last?.message) return
+    if (last.message === "__whiteboard_open__") setShowWhiteboard(true)
+    if (last.message === "__whiteboard_close__") setShowWhiteboard(false)
+  }, [chatMessages])
+
   const raiseHand = async () => {
     if (raisingHand || handRaised) return;
     setRaisingHand(true);

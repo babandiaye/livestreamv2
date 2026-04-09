@@ -14,12 +14,13 @@ export function Chat() {
     metadata ? JSON.parse(metadata) : { enable_chat: true }
   ) as RoomMetadata;
 
-  // Dédupliquer les messages
+  // Dédupliquer les messages et filtrer les commandes internes
   const messages = useMemo(() => {
     const timestamps = chatMessages.map((m) => m.timestamp);
     return chatMessages.filter((m, i) =>
       !timestamps.includes(m.timestamp, i + 1) &&
-      !m.message.startsWith("__emoji__")
+      !m.message.startsWith("__emoji__") &&
+      !m.message.startsWith("__whiteboard_")
     );
   }, [chatMessages]);
 

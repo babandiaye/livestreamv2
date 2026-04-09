@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react"
 import { signOut } from "next-auth/react"
+import StatusPanel from "@/components/StatusPanel"
 
 type User = { id: string; name: string; email: string; role: string; sessionCount: number; createdAt: string }
 type Room = { id: string; title: string; roomName: string; status: string; createdAt: string; creator: { name: string; email: string }; enrollments: number; recordings: number }
@@ -241,7 +242,7 @@ function EnrollPanel({ sessionId, sessionTitle }: { sessionId: string; sessionTi
 
 // ── Page principale ──
 export default function AdminClient({ user }: { user: { name?: string | null; email?: string | null; role: string } }) {
-  const [nav, setNav] = useState<"rooms" | "users" | "recordings">("rooms")
+  const [nav, setNav] = useState<"rooms" | "users" | "recordings" | "status">("rooms")
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [users, setUsers] = useState<User[]>([])
   const [rooms, setRooms] = useState<Room[]>([])
@@ -315,6 +316,7 @@ export default function AdminClient({ user }: { user: { name?: string | null; em
     { key: "rooms", label: "Salles", count: rooms.length, icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 10l4.553-2.069A1 1 0 0121 8.87v6.259a1 1 0 01-1.447.894L15 14"/><rect x="3" y="6" width="12" height="12" rx="2"/></svg> },
     { key: "recordings", label: "Enregistrements", count: recordings.length, icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M10 8l6 4-6 4V8z"/></svg> },
     ...(user.role === "ADMIN" ? [{ key: "users", label: "Utilisateurs", count: users.length, icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg> }] : []),
+    ...(user.role === "ADMIN" ? [{ key: "status", label: "Statut", count: 0, icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg> }] : []),
   ]
 
   return (
@@ -386,10 +388,10 @@ export default function AdminClient({ user }: { user: { name?: string | null; em
           </button>
           <div>
             <div style={{ fontSize: 14, fontWeight: 600, color: "#1a1a2e" }}>
-              {nav === "rooms" ? "Salles" : nav === "users" ? "Utilisateurs" : "Enregistrements"}
+              {nav === "rooms" ? "Salles" : nav === "users" ? "Utilisateurs" : nav === "status" ? "Statut des services" : "Enregistrements"}
             </div>
             <div style={{ fontSize: 13, color: "#9ca3af" }}>
-              {nav === "rooms" ? "Gérez les salles et les participants" : nav === "users" ? "Gérez les rôles et accès" : "Tous les enregistrements"}
+              {nav === "rooms" ? "Gérez les salles et les participants" : nav === "users" ? "Gérez les rôles et accès" : nav === "status" ? "Vérifiez la connectivité de l'infrastructure" : "Tous les enregistrements"}
             </div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -609,6 +611,9 @@ export default function AdminClient({ user }: { user: { name?: string | null; em
                   )}
             </div>
           )}
+
+          {/* ── STATUT DES SERVICES ── */}
+          {nav === "status" && <StatusPanel />}
         </div>
 
         {/* Footer */}
