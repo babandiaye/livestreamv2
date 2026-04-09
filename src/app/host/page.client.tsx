@@ -119,9 +119,10 @@ function HostRoom({ returnUrl = "/" }: { returnUrl?: string }) {
       t => t.source === Track.Source.ScreenShare &&
            t.participant.identity === localParticipant.identity
     );
+    const hasWhiteboard = showWhiteboard;
 
-    if (!hasCamera && !hasScreen) {
-      alert("Activez votre caméra ou partagez votre écran avant de démarrer l'enregistrement.");
+    if (!hasCamera && !hasScreen && !hasWhiteboard) {
+      alert("Activez votre caméra, partagez votre écran ou ouvrez le tableau blanc avant de démarrer l'enregistrement.");
       return null;
     }
 
@@ -235,7 +236,7 @@ function HostRoom({ returnUrl = "/" }: { returnUrl?: string }) {
             className={`h-btn-rec${recording ? " active" : ""}`}
             onClick={recording ? stopRecording : startRecording}
             disabled={recordingLoading || recordingWaiting}
-            title={!camOn && !shareOn ? "Activez la caméra ou partagez l'écran avant d'enregistrer" : ""}
+            title={!camOn && !shareOn && !showWhiteboard ? "Activez la caméra, partagez l'écran ou ouvrez le tableau avant d'enregistrer" : ""}
           >
             {recordingWaiting
               ? <><span className="h-rec-spinner" /> Préparation…</>

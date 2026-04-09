@@ -69,6 +69,7 @@ export default function Whiteboard({
   const eventStore = useRef<WBEvent[]>([])
   const batchRef = useRef<WBEvent[]>([])
   const batchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const hasReceivedInit = useRef(false)
 
   const [tool, setTool]   = useState<"pen"|"eraser">("pen")
   const [color, setColor] = useState("#1a1a2e")
@@ -104,9 +105,10 @@ export default function Whiteboard({
     return () => ro.disconnect()
   }, [])
 
-  // Envoyer l'historique complet (appelé quand un participant rejoint ou demande)
+  // Envoyer l'historique complet avec topic
   const sendInit = useCallback(() => {
     if (readOnly) return
+    if (eventStore.current.length === 0) return
     const init: WBInit = { v: 1, type: "init", events: eventStore.current }
     localParticipant.publishData(
       new TextEncoder().encode(JSON.stringify(init)),
@@ -114,21 +116,38 @@ export default function Whiteboard({
     )
   }, [readOnly, localParticipant])
 
+  // Demander le snapshot (côté spectateur/egress)
+  const requestInit = useCallback(() => {
+    try {
+      localParticipant.publishData(
+        new TextEncoder().encode("__wb_request_init__"),
+        { reliable: true, topic: WB_TOPIC }
+      )
+    } catch {}
+  }, [localParticipant])
+
+  // Côté spectateur : demander le snapshot au montage si pas encore reçu
+  useEffect(() => {
+    if (!readOnly) return
+    // Demander le snapshot à 1s, 3s et 6s (au cas où l'hôte n'a pas encore répondu)
+    const t1 = setTimeout(() => { if (!hasReceivedInit.current) requestInit() }, 1000)
+    const t2 = setTimeout(() => { if (!hasReceivedInit.current) requestInit() }, 3000)
+    const t3 = setTimeout(() => { if (!hasReceivedInit.current) requestInit() }, 6000)
+    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3) }
+  }, [readOnly, requestInit])
+
   // Recevoir données LiveKit — filtré par topic "wb" + ignorer self
   useEffect(() => {
     const handleData = (payload: Uint8Array, participant: any, _kind: any, topic?: string) => {
-      // Filtrer par topic : ignorer tout ce qui n'est pas whiteboard
       if (topic !== WB_TOPIC && topic !== undefined) return
-
-      // Ignorer ses propres messages (l'hôte dessine déjà localement)
       if (participant?.identity === localParticipant.identity) return
 
       try {
         const raw = new TextDecoder().decode(payload)
 
-        // Signal de demande d'historique (vient de l'egress ou d'un nouveau participant)
         if (raw === "__wb_request_init__") {
-          sendInit()
+          // Quelqu'un demande le snapshot — l'envoyer avec un petit délai
+          setTimeout(() => sendInit(), 200)
           return
         }
 
@@ -142,6 +161,7 @@ export default function Whiteboard({
           ctx.clearRect(0, 0, canvas.width, canvas.height)
           eventStore.current = [...msg.events]
           for (const ev of msg.events) replayEvent(ctx, ev)
+          hasReceivedInit.current = true
           return
         }
 
@@ -156,9 +176,9 @@ export default function Whiteboard({
       } catch {}
     }
 
-    // Quand un nouveau participant rejoint — envoyer l'historique
+    // Quand un nouveau participant rejoint — envoyer le snapshot après un délai
     const handleParticipantConnected = () => {
-      sendInit()
+      setTimeout(() => sendInit(), 500)
     }
 
     room.on("dataReceived", handleData)
@@ -169,7 +189,7 @@ export default function Whiteboard({
     }
   }, [room, readOnly, localParticipant, sendInit])
 
-  // Broadcast avec batch : accumule les events pendant 16ms puis envoie tout avec topic
+  // Broadcast avec batch + topic
   const broadcast = useCallback((ev: WBEvent) => {
     eventStore.current.push(ev)
     batchRef.current.push(ev)
@@ -188,7 +208,7 @@ export default function Whiteboard({
     }
   }, [localParticipant])
 
-  // getPos corrigé : utilise rect.width/rect.height (CSS) pour la normalisation
+  // getPos corrigé avec rect.width/rect.height
   const getPos = (e: React.PointerEvent) => {
     const canvas = canvasRef.current!
     const rect = canvas.getBoundingClientRect()
@@ -203,9 +223,7 @@ export default function Whiteboard({
     if (textMode) {
       const canvas = canvasRef.current!
       const rect = canvas.getBoundingClientRect()
-      const px = e.clientX - rect.left
-      const py = e.clientY - rect.top
-      setTextPos({ x: px, y: py })
+      setTextPos({ x: e.clientX - rect.left, y: e.clientY - rect.top })
       setTextVal("")
       setTimeout(() => textInputRef.current?.focus(), 30)
       return
@@ -221,12 +239,10 @@ export default function Whiteboard({
     if (!isDrawing.current || readOnly || textMode) return
     const pos = getPos(e)
 
-    // Dead zone : ne pas dessiner tant que le mouvement est inférieur au seuil
     if (!hasMoved.current) {
       const dx = pos.x - startPos.current.x
       const dy = pos.y - startPos.current.y
-      const dist = Math.sqrt(dx * dx + dy * dy)
-      if (dist < MIN_DISTANCE) return
+      if (Math.sqrt(dx * dx + dy * dy) < MIN_DISTANCE) return
       hasMoved.current = true
     }
 
@@ -266,10 +282,9 @@ export default function Whiteboard({
   const clearAll = () => {
     const canvas = canvasRef.current!
     canvas.getContext("2d")!.clearRect(0, 0, canvas.width, canvas.height)
-    const ev: WBEvent = { v: 1, type: "clear" }
     eventStore.current = []
     localParticipant.publishData(
-      new TextEncoder().encode(JSON.stringify(ev)),
+      new TextEncoder().encode(JSON.stringify({ v: 1, type: "clear" })),
       { reliable: true, topic: WB_TOPIC }
     )
   }

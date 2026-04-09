@@ -2,10 +2,12 @@
 
 import { useChat, useLocalParticipant, useRoomInfo } from "@livekit/components-react";
 import { RoomMetadata } from "@/lib/controller";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useRef, useCallback } from "react";
 
 export function Chat() {
   const [draft, setDraft] = useState("");
+  const [cooldown, setCooldown] = useState(false);
+  const cooldownTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { chatMessages, send } = useChat();
   const { localParticipant } = useLocalParticipant();
   const { metadata } = useRoomInfo();
@@ -24,12 +26,17 @@ export function Chat() {
     );
   }, [chatMessages]);
 
-  const onSend = async () => {
-    if (draft.trim() && send) {
-      await send(draft.trim());
-      setDraft("");
-    }
-  };
+  const onSend = useCallback(async () => {
+    if (!draft.trim() || !send || cooldown) return;
+    await send(draft.trim());
+    setDraft("");
+    // Cooldown 500ms anti-spam
+    setCooldown(true);
+    if (cooldownTimer.current) clearTimeout(cooldownTimer.current);
+    cooldownTimer.current = setTimeout(() => setCooldown(false), 500);
+  }, [draft, send, cooldown]);
+
+  const canSend = chatEnabled && draft.trim().length > 0 && !cooldown;
 
   return (
     <div className="chat-root">
@@ -51,13 +58,13 @@ export function Chat() {
       <div className="chat-input-row">
         <input
           className="chat-input"
-          placeholder={chatEnabled ? "Envoyer un message..." : "Chat désactivé"}
+          placeholder={chatEnabled ? (cooldown ? "Patientez…" : "Envoyer un message...") : "Chat désactivé"}
           disabled={!chatEnabled}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && onSend()}
+          onKeyDown={(e) => e.key === "Enter" && canSend && onSend()}
         />
-        <button className="chat-send" onClick={onSend} disabled={!draft.trim() || !chatEnabled}>
+        <button className="chat-send" onClick={onSend} disabled={!canSend}>
           ➤
         </button>
       </div>
