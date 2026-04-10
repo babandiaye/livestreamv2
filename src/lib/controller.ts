@@ -251,18 +251,13 @@ export class Controller {
     await this.roomService.deleteRoom(session.room_name);
   }
 
-  async joinStream({ identity, room_name }: JoinStreamParams): Promise<JoinStreamResponse> {
-    try {
-      await this.roomService.getParticipant(room_name, identity);
-      throw new Error("Participant already exists");
-    } catch (e) {
-      if (e instanceof Error && e.message === "Participant already exists") throw e;
-    }
+  async joinStream({ identity: displayName, room_name }: JoinStreamParams): Promise<JoinStreamResponse> {
+    const identity = crypto.randomUUID();
 
     const at = new AccessToken(
       process.env.LIVEKIT_API_KEY!,
       process.env.LIVEKIT_API_SECRET!,
-      { identity, ttl: "10h" }
+      { identity, name: displayName, ttl: "10h" }
     );
     at.addGrant({
       room: room_name,

@@ -246,9 +246,9 @@ function ViewerRoom({ returnUrl = "/" }: { returnUrl?: string }) {
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#21262d", border: "1px solid #30363d", borderRadius: 8, padding: "4px 12px" }}>
             <div style={{ width: 24, height: 24, borderRadius: "50%", background: "#0065b1", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: "white" }}>
-              {localParticipant.identity.charAt(0).toUpperCase()}
+              {(localParticipant.name ?? localParticipant.identity).charAt(0).toUpperCase()}
             </div>
-            <span style={{ fontSize: 13, fontWeight: 500, color: "#e6edf3" }}>{localParticipant.identity}</span>
+            <span style={{ fontSize: 13, fontWeight: 500, color: "#e6edf3" }}>{localParticipant.name ?? localParticipant.identity}</span>
             <span style={{ fontSize: 11, color: "#8b949e", background: "#161b22", padding: "1px 6px", borderRadius: 4 }}>Spectateur</span>
           </div>
         </div>
@@ -299,7 +299,7 @@ function ViewerRoom({ returnUrl = "/" }: { returnUrl?: string }) {
             {/* Name tag caméra */}
             {mainContent === "cam" && (
               <div style={{ position: "absolute", bottom: 12, left: 12, background: "rgba(1,4,9,.75)", backdropFilter: "blur(4px)", color: "#e6edf3", fontSize: 13, padding: "4px 12px", borderRadius: 5, border: "1px solid #21262d" }}>
-                {mainCamTrack!.participant.identity}
+                {mainCamTrack!.participant.name ?? mainCamTrack!.participant.identity}
               </div>
             )}
 
@@ -309,13 +309,13 @@ function ViewerRoom({ returnUrl = "/" }: { returnUrl?: string }) {
                 {mainCamTrack && (
                   <div style={{ width: 180, height: 112, borderRadius: 9, overflow: "hidden", background: "#161b22", position: "relative", border: "2px solid #0065b1", boxShadow: "0 4px 20px rgba(0,0,0,.6)" }}>
                     <VideoTrack trackRef={mainCamTrack} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                    <div style={{ position: "absolute", bottom: 4, left: 6, fontSize: 11, color: "white", background: "rgba(1,4,9,.75)", padding: "2px 6px", borderRadius: 3 }}>{mainCamTrack.participant.identity}</div>
+                    <div style={{ position: "absolute", bottom: 4, left: 6, fontSize: 11, color: "white", background: "rgba(1,4,9,.75)", padding: "2px 6px", borderRadius: 3 }}>{mainCamTrack.participant.name ?? mainCamTrack.participant.identity}</div>
                   </div>
                 )}
                 {stageCamTracks.map(t => (
                   <div key={t.participant.identity} style={{ width: 180, height: 112, borderRadius: 9, overflow: "hidden", background: "#161b22", position: "relative", border: "2px solid #30363d" }}>
                     <VideoTrack trackRef={t} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                    <div style={{ position: "absolute", bottom: 4, left: 6, fontSize: 11, color: "white", background: "rgba(1,4,9,.75)", padding: "2px 6px", borderRadius: 3 }}>{t.participant.identity}</div>
+                    <div style={{ position: "absolute", bottom: 4, left: 6, fontSize: 11, color: "white", background: "rgba(1,4,9,.75)", padding: "2px 6px", borderRadius: 3 }}>{t.participant.name ?? t.participant.identity}</div>
                   </div>
                 ))}
               </div>
@@ -327,7 +327,7 @@ function ViewerRoom({ returnUrl = "/" }: { returnUrl?: string }) {
                 {stageCamTracks.map(t => (
                   <div key={t.participant.identity} style={{ width: 160, height: 100, borderRadius: 8, background: "#161b22", position: "relative", flexShrink: 0, overflow: "hidden" }}>
                     <VideoTrack trackRef={t} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                    <div style={{ position: "absolute", bottom: 4, left: 6, fontSize: 11, color: "white", background: "rgba(0,0,0,.5)", padding: "2px 6px", borderRadius: 3 }}>{t.participant.identity}</div>
+                    <div style={{ position: "absolute", bottom: 4, left: 6, fontSize: 11, color: "white", background: "rgba(0,0,0,.5)", padding: "2px 6px", borderRadius: 3 }}>{t.participant.name ?? t.participant.identity}</div>
                   </div>
                 ))}
               </div>

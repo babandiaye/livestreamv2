@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
   const at = new AccessToken(
     process.env.LIVEKIT_API_KEY!,
     process.env.LIVEKIT_API_SECRET!,
-    { identity: userName, ttl: "8h" }
+    { identity: userEmail, name: userName, ttl: "8h" }
   )
   at.addGrant({
     room: room.roomName,

@@ -437,7 +437,7 @@ function HostRoom({ returnUrl = "/" }: { returnUrl?: string }) {
             )}
 
             {mainContent === "avatar" && (
-              <div className="h-avatar-big">{localParticipant.identity.charAt(0).toUpperCase()}</div>
+              <div className="h-avatar-big">{(localParticipant.name ?? localParticipant.identity).charAt(0).toUpperCase()}</div>
             )}
 
             {mainContent !== "whiteboard" && (
@@ -460,10 +460,11 @@ function HostRoom({ returnUrl = "/" }: { returnUrl?: string }) {
                 )}
                 {stageParts.map(p => {
                   const t = stageCamTracks.find(t => t.participant.identity === p.identity);
+                  const displayName = p.name ?? p.identity;
                   return (
                     <div key={p.identity} className="h-pip-tile">
-                      {t ? <VideoTrack trackRef={t} className="h-video-el" /> : <div className="h-avatar-pip">{p.identity.charAt(0).toUpperCase()}</div>}
-                      <div className="h-pip-name">{p.identity}</div>
+                      {t ? <VideoTrack trackRef={t} className="h-video-el" /> : <div className="h-avatar-pip">{displayName.charAt(0).toUpperCase()}</div>}
+                      <div className="h-pip-name">{displayName}</div>
                       <button className="h-pip-rm" onClick={() => removeFromStage(p.identity)}>✕</button>
                     </div>
                   );
@@ -476,10 +477,11 @@ function HostRoom({ returnUrl = "/" }: { returnUrl?: string }) {
             <div className="h-strip">
               {stageParts.map(p => {
                 const t = stageCamTracks.find(t => t.participant.identity === p.identity);
+                const displayName = p.name ?? p.identity;
                 return (
                   <div key={p.identity} className="h-tile">
-                    {t ? <VideoTrack trackRef={t} className="h-video-el" /> : <div className="h-avatar-sm">{p.identity.charAt(0).toUpperCase()}</div>}
-                    <div className="h-tile-name">{p.identity}</div>
+                    {t ? <VideoTrack trackRef={t} className="h-video-el" /> : <div className="h-avatar-sm">{displayName.charAt(0).toUpperCase()}</div>}
+                    <div className="h-tile-name">{displayName}</div>
                     <button className="h-tile-rm" onClick={() => removeFromStage(p.identity)}>✕</button>
                   </div>
                 );
@@ -491,15 +493,19 @@ function HostRoom({ returnUrl = "/" }: { returnUrl?: string }) {
 
           {raisedHands.length > 0 && (
             <div className="h-hands">
-              {raisedHands.map(id => (
-                <div key={id} className="h-hand-chip">
-                  <span>🙋 {id}</span>
-                  <button className="h-hand-ok" onClick={() => inviteToStage(id)} disabled={inviting === id}>
-                    {inviting === id ? "..." : "Accepter"}
-                  </button>
-                  <button className="h-hand-no" onClick={() => removeFromStage(id)}>✕</button>
-                </div>
-              ))}
+              {raisedHands.map(id => {
+                const p = participants.find(p => p.identity === id);
+                const displayName = p?.name ?? id;
+                return (
+                  <div key={id} className="h-hand-chip">
+                    <span>🙋 {displayName}</span>
+                    <button className="h-hand-ok" onClick={() => inviteToStage(id)} disabled={inviting === id}>
+                      {inviting === id ? "..." : "Accepter"}
+                    </button>
+                    <button className="h-hand-no" onClick={() => removeFromStage(id)}>✕</button>
+                  </div>
+                );
+              })}
             </div>
           )}
 
@@ -539,10 +545,10 @@ function HostRoom({ returnUrl = "/" }: { returnUrl?: string }) {
                   const isHost = p.identity === localParticipant.identity;
                   return (
                     <div key={p.identity} className="h-prow">
-                      <div className="h-pavatar">{p.identity.charAt(0).toUpperCase()}</div>
+                      <div className="h-pavatar">{(p.name ?? p.identity).charAt(0).toUpperCase()}</div>
                       <div className="h-pinfo">
                         <div className="h-pname">
-                          {p.identity}
+                          {p.name ?? p.identity}
                           {isHost && <span className="h-ptag">Vous</span>}
                         </div>
                         <div className="h-pstatus">

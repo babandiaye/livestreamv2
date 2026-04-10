@@ -180,9 +180,9 @@ function EgressRoom() {
           ) : (
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 16, color: "#475569" }}>
               <div style={{ width: 80, height: 80, borderRadius: "50%", background: "#0065b1", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "2rem", fontWeight: 700, color: "white" }}>
-                {participants[0]?.identity?.charAt(0)?.toUpperCase() ?? "U"}
+                {(participants[0]?.name ?? participants[0]?.identity)?.charAt(0)?.toUpperCase() ?? "U"}
               </div>
-              <span style={{ fontSize: "1rem", color: "#64748b" }}>{participants[0]?.identity ?? "En attente…"}</span>
+              <span style={{ fontSize: "1rem", color: "#64748b" }}>{participants[0]?.name ?? participants[0]?.identity ?? "En attente…"}</span>
             </div>
           )}
         </div>
@@ -192,7 +192,7 @@ function EgressRoom() {
           <div style={{ position: "absolute", bottom: 20, right: 20, width: 240, height: 150, borderRadius: 10, overflow: "hidden", border: "2px solid #0065b1", boxShadow: "0 4px 20px rgba(0,0,0,.6)", background: "#1e2d3d", zIndex: 10 }}>
             <VideoTrack trackRef={mainCamTrack} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
             <div style={{ position: "absolute", bottom: 4, left: 8, fontSize: "0.7rem", color: "white", background: "rgba(0,0,0,.6)", padding: "2px 6px", borderRadius: 3 }}>
-              {mainCamTrack.participant.identity}
+              {mainCamTrack.participant.name ?? mainCamTrack.participant.identity}
             </div>
           </div>
         )}
@@ -204,7 +204,7 @@ function EgressRoom() {
               <div key={t.participant.identity} style={{ width: 140, height: 90, borderRadius: 7, overflow: "hidden", border: "1px solid #2d3f52", flexShrink: 0, position: "relative" }}>
                 <VideoTrack trackRef={t} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                 <div style={{ position: "absolute", bottom: 3, left: 5, fontSize: "0.65rem", color: "white", background: "rgba(0,0,0,.6)", padding: "1px 5px", borderRadius: 3 }}>
-                  {t.participant.identity}
+                  {t.participant.name ?? t.participant.identity}
                 </div>
               </div>
             ))}
@@ -228,7 +228,7 @@ function EgressRoom() {
           <div style={{ position: "absolute", bottom: 20, right: 20, zIndex: 30, width: 200, height: 125, borderRadius: 10, overflow: "hidden", border: "2px solid #0065b1", boxShadow: "0 4px 20px rgba(0,0,0,.6)" }}>
             <VideoTrack trackRef={mainCamTrack} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
             <div style={{ position: "absolute", bottom: 4, left: 8, fontSize: "0.7rem", color: "white", background: "rgba(0,0,0,.6)", padding: "2px 6px", borderRadius: 3 }}>
-              {mainCamTrack.participant.identity}
+              {mainCamTrack.participant.name ?? mainCamTrack.participant.identity}
             </div>
           </div>
         )}
@@ -262,9 +262,9 @@ function EgressRoom() {
             <div key={i} style={{ display: "flex", flexDirection: "column", gap: 3 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                 <div style={{ width: 22, height: 22, borderRadius: "50%", background: "#0065b1", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.65rem", fontWeight: 700, color: "white", flexShrink: 0 }}>
-                  {msg.from?.identity?.charAt(0)?.toUpperCase() ?? "?"}
+                  {(msg.from?.name ?? msg.from?.identity)?.charAt(0)?.toUpperCase() ?? "?"}
                 </div>
-                <span style={{ fontSize: "0.72rem", fontWeight: 600, color: "#60a5fa" }}>{msg.from?.identity ?? "Anonyme"}</span>
+                <span style={{ fontSize: "0.72rem", fontWeight: 600, color: "#60a5fa" }}>{msg.from?.name ?? msg.from?.identity ?? "Anonyme"}</span>
                 <span style={{ fontSize: "0.65rem", color: "#475569", marginLeft: "auto" }}>
                   {new Date(msg.timestamp).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}
                 </span>
