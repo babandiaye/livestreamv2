@@ -180,9 +180,9 @@ function EgressRoom() {
           ) : (
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 16, color: "#475569" }}>
               <div style={{ width: 80, height: 80, borderRadius: "50%", background: "#0065b1", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "2rem", fontWeight: 700, color: "white" }}>
-                {(participants[0]?.name ?? participants[0]?.identity)?.charAt(0)?.toUpperCase() ?? "U"}
+                {(participants[0]?.name || participants[0]?.identity)?.charAt(0)?.toUpperCase() ?? "U"}
               </div>
-              <span style={{ fontSize: "1rem", color: "#64748b" }}>{participants[0]?.name ?? participants[0]?.identity ?? "En attente…"}</span>
+              <span style={{ fontSize: "1rem", color: "#64748b" }}>{participants[0]?.name || participants[0]?.identity || "En attente…"}</span>
             </div>
           )}
         </div>

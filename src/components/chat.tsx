@@ -48,7 +48,7 @@ export function Chat() {
           return (
             <div key={msg.timestamp} className={`chat-msg ${isMe ? "mine" : ""}`}>
               <span className={`chat-who ${isMe ? "me" : ""}`}>
-                {isMe ? "Vous" : (msg.from?.name ?? msg.from?.identity ?? "Inconnu")}
+                {isMe ? "Vous" : (msg.from?.name || msg.from?.identity || "Inconnu")}
               </span>
               <span className="chat-text">{msg.message}</span>
             </div>

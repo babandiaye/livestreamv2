@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
   await roomService.createRoom({
     name: room.roomName,
     metadata: JSON.stringify({
-      creator_identity: moderatorName,
+      creator_identity: moderatorEmail,
       enable_chat: true,
       allow_participation: false,
     }),
@@ -51,7 +51,7 @@ export async function POST(req: NextRequest) {
   const at = new AccessToken(
     process.env.LIVEKIT_API_KEY!,
     process.env.LIVEKIT_API_SECRET!,
-    { identity: moderatorName, ttl: "8h" }
+    { identity: moderatorEmail, name: moderatorName, ttl: "8h" }
   )
   at.addGrant({
     room: room.roomName,
@@ -66,7 +66,7 @@ export async function POST(req: NextRequest) {
   const atAuth = new AccessToken(
     process.env.LIVEKIT_API_KEY!,
     process.env.LIVEKIT_API_SECRET!,
-    { identity: moderatorName, ttl: "8h" }
+    { identity: moderatorEmail, name: moderatorName, ttl: "8h" }
   )
   atAuth.addGrant({ room: room.roomName, roomJoin: false })
   const authToken = await atAuth.toJwt()
