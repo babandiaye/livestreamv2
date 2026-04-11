@@ -58,7 +58,7 @@ export default function EgressLayoutClient() {
   }, [roomName])
 
   if (!roomName || !token) {
-    return <div style={{ background: "#0d1117", height: "100vh", width: "100vw" }} />
+    return <div style={{ background: "#0d1117", width: "1920px", height: "1080px" }} />
   }
 
   return (
@@ -66,7 +66,7 @@ export default function EgressLayoutClient() {
       token={token}
       serverUrl={process.env.NEXT_PUBLIC_LIVEKIT_URL!}
       connect={true}
-      style={{ height: "100vh", width: "100vw", background: "#0d1117" }}
+      style={{ width: "1920px", height: "1080px", background: "#0d1117" }}
     >
       <EgressRoom />
     </LiveKitRoom>
@@ -166,7 +166,7 @@ function EgressRoom() {
 
   return (
     <div style={{
-      display: "flex", width: "100vw", height: "100vh",
+      display: "flex", width: "1920px", height: "1080px",
       background: "#0d1117", fontFamily: "'Segoe UI', system-ui, sans-serif", overflow: "hidden",
     }}>
       {/* ── Zone principale ── */}
@@ -176,7 +176,7 @@ function EgressRoom() {
           {screenTrack ? (
             <VideoTrack trackRef={screenTrack} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
           ) : mainCamTrack ? (
-            <VideoTrack trackRef={mainCamTrack} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+            <VideoTrack trackRef={mainCamTrack} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
           ) : (
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 16, color: "#475569" }}>
               <div style={{ width: 80, height: 80, borderRadius: "50%", background: "#0065b1", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "2rem", fontWeight: 700, color: "white" }}>
@@ -211,13 +211,13 @@ function EgressRoom() {
           </div>
         )}
 
-        {/* Canvas tableau blanc */}
+        {/* Canvas tableau blanc — 1620x1080 = zone principale (1920 - 300px chat) */}
         <canvas
           ref={canvasRef}
-          width={1920} height={1080}
+          width={1620} height={1080}
           style={{
             position: "absolute", inset: 0, zIndex: 20,
-            width: "100%", height: "100%",
+            width: "1620px", height: "1080px",
             background: "white",
             display: showWhiteboard ? "block" : "none",
           }}

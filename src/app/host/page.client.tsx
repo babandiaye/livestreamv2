@@ -7,7 +7,7 @@ import { useState, useEffect } from "react";
 import { TokenContext } from "@/components/token-context";
 import { Chat } from "@/components/chat";
 import StreamingDialog from "@/components/streaming-dialog";
-import { ParticipantMetadata, RoomMetadata } from "@/lib/controller";
+import { ParticipantMetadata } from "@/lib/controller";
 import { useAuthToken } from "@/components/token-context";
 import dynamic from "next/dynamic";
 const Whiteboard = dynamic(() => import("@/components/whiteboard"), { ssr: false });
@@ -127,8 +127,8 @@ function HostRoom({ returnUrl = "/" }: { returnUrl?: string }) {
     });
   };
 
-  const kickParticipant = async (identity: string) => {
-    if (!confirm(`Exclure ${identity} de la session ?`)) return;
+  const kickParticipant = async (identity: string, displayName = identity) => {
+    if (!confirm(`Exclure ${displayName} de la session ?`)) return;
     await fetch("/api/kick_participant", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${authToken}` },
@@ -437,7 +437,7 @@ function HostRoom({ returnUrl = "/" }: { returnUrl?: string }) {
             )}
 
             {mainContent === "avatar" && (
-              <div className="h-avatar-big">{(localParticipant.name ?? localParticipant.identity).charAt(0).toUpperCase()}</div>
+              <div className="h-avatar-big">{(localParticipant.name || localParticipant.identity).charAt(0).toUpperCase()}</div>
             )}
 
             {mainContent !== "whiteboard" && (
@@ -460,7 +460,7 @@ function HostRoom({ returnUrl = "/" }: { returnUrl?: string }) {
                 )}
                 {stageParts.map(p => {
                   const t = stageCamTracks.find(t => t.participant.identity === p.identity);
-                  const displayName = p.name ?? p.identity;
+                  const displayName = p.name || p.identity;
                   return (
                     <div key={p.identity} className="h-pip-tile">
                       {t ? <VideoTrack trackRef={t} className="h-video-el" /> : <div className="h-avatar-pip">{displayName.charAt(0).toUpperCase()}</div>}
@@ -477,7 +477,7 @@ function HostRoom({ returnUrl = "/" }: { returnUrl?: string }) {
             <div className="h-strip">
               {stageParts.map(p => {
                 const t = stageCamTracks.find(t => t.participant.identity === p.identity);
-                const displayName = p.name ?? p.identity;
+                const displayName = p.name || p.identity;
                 return (
                   <div key={p.identity} className="h-tile">
                     {t ? <VideoTrack trackRef={t} className="h-video-el" /> : <div className="h-avatar-sm">{displayName.charAt(0).toUpperCase()}</div>}
@@ -545,10 +545,10 @@ function HostRoom({ returnUrl = "/" }: { returnUrl?: string }) {
                   const isHost = p.identity === localParticipant.identity;
                   return (
                     <div key={p.identity} className="h-prow">
-                      <div className="h-pavatar">{(p.name ?? p.identity).charAt(0).toUpperCase()}</div>
+                      <div className="h-pavatar">{(p.name || p.identity).charAt(0).toUpperCase()}</div>
                       <div className="h-pinfo">
                         <div className="h-pname">
-                          {p.name ?? p.identity}
+                          {p.name || p.identity}
                           {isHost && <span className="h-ptag">Vous</span>}
                         </div>
                         <div className="h-pstatus">
@@ -565,7 +565,7 @@ function HostRoom({ returnUrl = "/" }: { returnUrl?: string }) {
                         <button className="h-premove" onClick={() => removeFromStage(p.identity)}>Retirer</button>
                       )}
                       {!isHost && (
-                        <button className="h-pkick" onClick={() => kickParticipant(p.identity)}>Exclure</button>
+                        <button className="h-pkick" onClick={() => kickParticipant(p.identity, p.name || p.identity)}>Exclure</button>
                       )}
                     </div>
                   );

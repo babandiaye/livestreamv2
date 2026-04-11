@@ -31,11 +31,11 @@ export async function POST(req: Request) {
       width: 1920,
       height: 1080,
       framerate: 60,
-      videoBitrate: 4500,
+      videoBitrate: 6000,
       videoCodec: 2,
       audioBitrate: 128,
       audioCodec: 1,
-      keyFrameInterval: 4,
+      keyFrameInterval: 2,
     })
 
     const info = await egressClient.startWebEgress(
